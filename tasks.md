@@ -79,8 +79,8 @@
 - [x] **1G.1** Build Accounts list page: cards showing each account (name, custodian, total value, number of holdings)
 - [x] **1G.2** Build Add Account dialog/modal: form with fields from SPEC.md 3.3, custodian dropdown with search
 - [x] **1G.3** Build Account detail page: holdings table, account-level KPI cards, account-level allocation chart
-- [ ] **1G.4** Build Edit Account dialog and Delete Account confirmation
-- [ ] **1G.5** Add loading and empty states for accounts pages
+- [x] **1G.4** Build Edit Account dialog and Delete Account confirmation
+- [x] **1G.5** Add loading and empty states for accounts pages
 
 ## Phase 1H: Holdings UI
 

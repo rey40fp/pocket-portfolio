@@ -12,8 +12,11 @@ import {
   Briefcase,
 } from "lucide-react";
 import { getAccountDetailData } from "@/server/dal/accounts";
+import type { AccountHoldingRow } from "@/server/dal/accounts";
 import { formatCurrency, formatPercent, formatShares, cn } from "@/lib/utils";
 import { AssetAllocationChart } from "@/components/dashboard/asset-allocation-chart";
+import { EditAccountDialog } from "@/components/forms/edit-account-dialog";
+import { DeleteAccountDialog } from "@/components/forms/delete-account-dialog";
 
 // ─── KPI Card (reused pattern) ──────────────────────────────────────
 
@@ -54,8 +57,6 @@ function KPICard({ title, value, subtitle, icon: CardIcon, trend }: KPICardProps
 }
 
 // ─── Holdings Table ─────────────────────────────────────────────────
-
-import type { AccountHoldingRow } from "@/server/dal/accounts";
 
 function HoldingsTable({ holdings }: { holdings: AccountHoldingRow[] }) {
   if (holdings.length === 0) {
@@ -206,6 +207,23 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
               {account.accountTypeLabel}
             </span>
           </div>
+        </div>
+
+        {/* Edit / Delete actions */}
+        <div className="flex items-center gap-2">
+          <EditAccountDialog
+            accountId={account.id}
+            currentValues={{
+              name: account.name,
+              custodian: account.custodian,
+              accountType: account.accountType,
+              notes: account.notes,
+            }}
+          />
+          <DeleteAccountDialog
+            accountId={account.id}
+            accountName={account.name}
+          />
         </div>
       </div>
 

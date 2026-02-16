@@ -347,6 +347,7 @@ export interface AccountDetailData {
     custodianLabel: string;
     accountType: string;
     accountTypeLabel: string;
+    notes: string | null;
   };
   kpis: AccountKPIs;
   allocation: AccountAllocationSlice[];
@@ -529,6 +530,7 @@ export async function getAccountDetailData(
       custodianLabel: CUSTODIANS[account.custodian as Custodian] ?? account.custodian,
       accountType: account.accountType,
       accountTypeLabel: ACCOUNT_TYPES[account.accountType as AccountType] ?? account.accountType,
+      notes: account.notes,
     },
     kpis: {
       totalValueCents,
