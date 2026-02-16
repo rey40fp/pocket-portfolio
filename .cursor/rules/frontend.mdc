@@ -1,0 +1,94 @@
+---
+description: Frontend component and page rules
+globs: ["src/app/**/*", "src/components/**/*", "src/hooks/**/*", "src/stores/**/*"]
+---
+
+# Frontend Rules — Pocket Portfolio
+
+## Theme & Design System
+- **Primary palette:** White backgrounds, green accents (#16a34a / green-600 for primary actions, #15803d / green-700 for hover). Use emerald scale for variety.
+- **Neutral palette:** Slate grays (slate-50 through slate-900) for text and borders.
+- **Accent colors:** Red-500 for losses/negative, green-500 for gains/positive, amber-500 for warnings.
+- **Typography:** Use Inter (sans-serif) via `next/font`. Font sizes follow Tailwind defaults.
+- **Spacing:** Consistent 4px grid (p-1 = 4px, p-2 = 8px, etc.)
+- **Border radius:** Rounded-lg (8px) for cards, rounded-md (6px) for buttons and inputs.
+- **Shadows:** Use shadow-sm for cards, shadow-md for dropdowns/modals.
+
+## Component Patterns
+
+### Server Components (default)
+```tsx
+// src/app/(dashboard)/portfolio/page.tsx
+import { getPortfolios } from "@/server/dal/portfolios";
+import { PortfolioList } from "@/components/dashboard/portfolio-list";
+
+export default async function PortfolioPage() {
+  const portfolios = await getPortfolios();
+  return <PortfolioList portfolios={portfolios} />;
+}
+```
+
+### Client Components (only when needed)
+```tsx
+// src/components/forms/add-holding-form.tsx
+"use client";
+
+import { useState } from "react";
+import { useAction } from "next-safe-action/hooks";
+import { addHolding } from "@/server/actions/holdings";
+import { Button } from "@/components/ui/button";
+
+export function AddHoldingForm({ accountId }: { accountId: string }) {
+  // Interactive form logic here
+}
+```
+
+## Dashboard Layout Rules
+- Sidebar navigation on the left (collapsible on mobile)
+- Top header with user avatar (Clerk UserButton), household selector, notification area
+- Main content area with max-width container (max-w-7xl)
+- Use Tremor Grid and Col components for dashboard card layouts
+- KPI cards at the top of dashboard pages (total net worth, day change, total gain/loss)
+- Charts below KPI cards, tables below charts
+
+## Currency Display Rules
+- Always format with `formatCurrency()` from `lib/utils.ts`
+- Input: integer cents → Output: "$1,234.56"
+- Gains: green text with "+" prefix and up arrow icon
+- Losses: red text with "−" prefix and down arrow icon
+- Percentages: always show 2 decimal places
+- Large numbers: use abbreviations on mobile (1.2M, 45.3K) but full numbers on desktop
+
+## Table Patterns
+- Use shadcn/ui DataTable with TanStack Table for sortable, filterable data
+- Always include: column sorting, search/filter, pagination (25 rows default)
+- Holdings tables must show: ticker, name, shares, avg cost, current price, market value, gain/loss ($), gain/loss (%), custodian
+- Use sticky headers on scroll
+- Row click navigates to detail view
+
+## Form Patterns
+- Use React Hook Form + Zod resolver for all forms
+- Show inline validation errors below fields (red-500 text, text-sm)
+- Submit buttons show loading spinner during Server Action execution
+- Success: toast notification (sonner) + redirect or data refresh
+- Error: toast notification with error message
+- All monetary inputs accept decimal format (user types "150.50"), convert to cents on submit
+
+## Chart Patterns
+- Portfolio value over time: Tremor AreaChart with green gradient fill
+- Asset allocation: Tremor DonutChart with custom color palette
+- Holdings performance: Recharts BarChart (green for positive, red for negative)
+- Use Lightweight Charts (TradingView) for stock price detail views with candlestick option
+
+## Loading & Error States
+- Every route has a `loading.tsx` with skeleton matching the page layout
+- Every route has an `error.tsx` with friendly error message and retry button
+- Use Suspense boundaries around data-fetching sections within pages
+- Empty states: illustration + descriptive text + CTA button (e.g., "Add your first holding")
+
+## Accessibility
+- All interactive elements must be keyboard navigable
+- Use semantic HTML (nav, main, section, article, header)
+- ARIA labels on icon-only buttons
+- Color is never the only indicator (always pair with icon or text)
+- Minimum touch targets: 44x44px on mobile

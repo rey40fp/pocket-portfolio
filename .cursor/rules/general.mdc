@@ -1,0 +1,94 @@
+---
+description: Global project rules for Pocket Portfolio
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Pocket Portfolio — Global Rules
+
+## Project Overview
+Pocket Portfolio is a portfolio management web app where users manually track stocks, real estate, crypto, cash, and other assets across multiple custodians and accounts. It supports households, role-based access, and is designed for future mobile (React Native) conversion.
+
+## Tech Stack (exact versions matter)
+- **Framework:** Next.js 15+ (App Router, Server Components, Server Actions)
+- **Language:** TypeScript (strict mode) + Zod for runtime validation
+- **Styling:** Tailwind CSS v4 with CSS variables for theming
+- **UI:** shadcn/ui + Tremor (dashboard components)
+- **Database:** Supabase (managed PostgreSQL) via Drizzle ORM
+- **Auth:** Clerk (RBAC with four roles: User, Admin, WealthManager, Analyst)
+- **State:** Zustand (client state), TanStack Query (server state)
+- **Charts:** Recharts + Tremor charts + Lightweight Charts (financial)
+- **Deployment:** Vercel (frontend) + Railway (background jobs)
+
+## Directory Structure
+```
+src/
+├── app/                  # Next.js App Router (pages, layouts, loading, error)
+│   ├── (auth)/           # Auth pages (sign-in, sign-up)
+│   ├── (dashboard)/      # Authenticated dashboard routes
+│   │   ├── portfolio/    # Portfolio views
+│   │   ├── accounts/     # Account management
+│   │   ├── holdings/     # Holdings detail views
+│   │   ├── news/         # Market news tab
+│   │   ├── household/    # Household management
+│   │   ├── analytics/    # Performance & analytics
+│   │   └── settings/     # User settings
+│   └── api/              # API routes (market data proxy, webhooks)
+├── components/
+│   ├── ui/               # shadcn/ui primitives (button, card, dialog, etc.)
+│   ├── dashboard/        # Tremor dashboard widgets (KPI cards, charts)
+│   ├── forms/            # Form components (add holding, add account, etc.)
+│   ├── layout/           # Sidebar, header, navigation
+│   └── shared/           # Reusable composed components
+├── lib/
+│   ├── supabase/         # Supabase client (server + browser)
+│   ├── clerk/            # Clerk helpers and middleware config
+│   ├── utils.ts          # General utilities (cn, formatCurrency, etc.)
+│   └── constants.ts      # App-wide constants, enums
+├── server/
+│   ├── actions/          # Server Actions (grouped by domain)
+│   ├── dal/              # Data Access Layer (centralized DB queries)
+│   ├── services/         # Business logic (performance calc, tax estimation)
+│   └── validators/       # Zod schemas for all inputs
+├── db/
+│   ├── schema/           # Drizzle schema files (one per table group)
+│   ├── migrations/       # Generated SQL migrations
+│   └── seed.ts           # Seed script with sample data
+├── hooks/                # Custom React hooks
+├── stores/               # Zustand stores
+└── types/                # Shared TypeScript types and interfaces
+```
+
+## Critical Rules — NEVER violate these
+1. **Money as integers:** Store ALL financial amounts as integer cents. Never use float/double for money. Display formatting happens in the UI layer only.
+2. **RLS on every table:** Every Supabase table MUST have Row-Level Security policies enabled. No exceptions.
+3. **No client-side secrets:** API keys, Supabase service role keys, and any secrets MUST only exist in server-side environment variables. Never import them in client components.
+4. **Zod validation on every input:** Every Server Action and API route validates input with a Zod schema before processing.
+5. **Data Access Layer:** All database queries go through `src/server/dal/`. Components and Server Actions never call Supabase directly.
+6. **Audit logging:** Every create, update, delete operation on financial data must write to the `audit_logs` table.
+
+## Code Style Conventions
+- Use `function` declarations for components, arrow functions for utilities
+- Named exports for components, default export only for pages
+- Collocate related files: `page.tsx`, `loading.tsx`, `error.tsx` in the same route folder
+- Server Components by default; add `"use client"` only when hooks/interactivity is required
+- Prefer Server Actions over API routes for mutations
+- Use `cn()` utility (from lib/utils) for conditional Tailwind classes
+
+## Commands
+- `npm run dev` → Start development server (port 3000)
+- `npm run build` → Production build
+- `npm run lint` → ESLint check
+- `npm run test` → Run Vitest unit tests
+- `npm run test:e2e` → Run Playwright E2E tests
+- `npx drizzle-kit push` → Push schema to Supabase
+- `npx drizzle-kit generate` → Generate migration SQL
+- `npm run seed` → Run database seed script
+
+## Reference Documents (read before making related changes)
+- `docs/database.md` → Full schema with all tables, columns, types, and relationships
+- `docs/api.md` → API route and Server Action definitions
+- `docs/security.md` → Security requirements, RLS policy patterns, auth flows
+- `docs/architecture.md` → System architecture, data flow diagrams, design decisions
+- `SPEC.md` → Full product specification with user stories and acceptance criteria
+- `tasks.md` → Implementation checklist (update checkboxes as you complete work)

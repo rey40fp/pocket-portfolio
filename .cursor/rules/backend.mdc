@@ -1,0 +1,142 @@
+---
+description: Backend, Server Actions, API routes, and business logic rules
+globs: ["src/server/**/*", "src/app/api/**/*", "src/db/**/*"]
+---
+
+# Backend Rules — Pocket Portfolio
+
+## Server Action Pattern
+Every mutation goes through a Server Action with this exact pattern:
+
+```tsx
+// src/server/actions/holdings.ts
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { addHoldingToDB } from "@/server/dal/holdings";
+import { logAuditEvent } from "@/server/dal/audit";
+
+const addHoldingSchema = z.object({
+  accountId: z.string().uuid(),
+  ticker: z.string().min(1).max(10).toUpperCase(),
+  shares: z.number().positive(),
+  costBasisCents: z.number().int().positive(), // Always integer cents
+  acquiredAt: z.string().datetime(),
+  assetType: z.enum(["stock", "etf", "mutual_fund", "crypto", "bond"]),
+});
+
+export async function addHolding(input: z.infer<typeof addHoldingSchema>) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const validated = addHoldingSchema.parse(input);
+
+  const holding = await addHoldingToDB({ ...validated, userId });
+
+  await logAuditEvent({
+    actorId: userId,
+    action: "CREATE",
+    resourceType: "holding",
+    resourceId: holding.id,
+    metadata: { ticker: validated.ticker },
+  });
+
+  revalidatePath("/dashboard/holdings");
+  return { success: true, holdingId: holding.id };
+}
+```
+
+## Data Access Layer (DAL) Pattern
+All database queries are centralized in `src/server/dal/`. This is the ONLY place that imports the Supabase client or Drizzle ORM.
+
+```tsx
+// src/server/dal/holdings.ts
+import { db } from "@/db";
+import { holdings } from "@/db/schema/holdings";
+import { eq, and } from "drizzle-orm";
+import { auth } from "@clerk/nextjs/server";
+
+export async function getHoldingsByAccount(accountId: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  return db
+    .select()
+    .from(holdings)
+    .where(and(eq(holdings.accountId, accountId), eq(holdings.userId, userId)));
+}
+```
+
+## API Route Pattern (for external data proxying only)
+API routes are used ONLY for: webhook handlers, market data proxy, and third-party callbacks.
+
+```tsx
+// src/app/api/market/quote/route.ts
+import { auth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const querySchema = z.object({ symbol: z.string().min(1).max(10) });
+
+export async function GET(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const { symbol } = querySchema.parse({ symbol: searchParams.get("symbol") });
+
+  // Fetch from cached Supabase data, NOT directly from external API
+  // External API calls happen only in background cron jobs
+}
+```
+
+## Role-Based Access Patterns
+Always check roles via Clerk metadata in Server Actions:
+
+```tsx
+import { auth } from "@clerk/nextjs/server";
+
+type UserRole = "user" | "admin" | "wealth_manager" | "analyst";
+
+async function requireRole(allowedRoles: UserRole[]) {
+  const { userId, sessionClaims } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const role = (sessionClaims?.metadata as { role?: UserRole })?.role ?? "user";
+  if (!allowedRoles.includes(role)) throw new Error("Forbidden");
+
+  return { userId, role };
+}
+
+// Usage in a Server Action:
+export async function getClientPortfolios() {
+  const { userId, role } = await requireRole(["admin", "wealth_manager"]);
+  // wealth_manager sees only assigned clients
+  // admin sees all
+}
+```
+
+## Financial Calculation Rules
+1. **Integer cents everywhere:** Store as `bigint` in PostgreSQL, `number` in TypeScript. Convert only at display time.
+2. **Cost basis:** Track per-lot (each purchase is a separate lot with its own cost basis and date).
+3. **Realized gains:** When a position is sold, compute gain = (sell price × shares) − (cost basis of sold lots). Store as a realized_transaction record.
+4. **Unrealized gains:** Current market value − total cost basis of remaining lots.
+5. **Portfolio growth excluding deposits:** Use time-weighted return (TWR) formula — isolates investment performance from cash flow timing.
+6. **Cross-custodian grouping:** When grouping same ticker across custodians, compute weighted average cost basis: sum(cost_basis × shares) / sum(shares).
+
+## Error Handling
+- Server Actions return `{ success: true, data }` or throw typed errors
+- Use a shared `AppError` class with error codes: `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `RATE_LIMITED`
+- Never expose internal error details to the client
+- Log errors server-side with structured logging (pino)
+
+## Rate Limiting
+- Apply rate limiting via middleware on API routes
+- Auth endpoints: 5 requests/minute
+- Data mutation endpoints: 30 requests/minute
+- Read endpoints: 100 requests/minute
+- Market data proxy: 60 requests/minute
