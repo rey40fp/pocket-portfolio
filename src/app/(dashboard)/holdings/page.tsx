@@ -1,0 +1,145 @@
+import Link from "next/link";
+import { Package, Receipt } from "lucide-react";
+import { getAllHoldingsWithDetails } from "@/server/dal/holdings";
+import { getAccountsWithSummary } from "@/server/dal/accounts";
+import { formatCurrency } from "@/lib/utils";
+import { HoldingsDataTable } from "@/components/dashboard/holdings-data-table";
+import { AddHoldingDialog } from "@/components/forms/add-holding-dialog";
+
+export default async function HoldingsPage() {
+  const [holdings, accountSummaries] = await Promise.all([
+    getAllHoldingsWithDetails(),
+    getAccountsWithSummary(),
+  ]);
+
+  const accountOptions = accountSummaries.map((a) => ({
+    id: a.id,
+    name: a.name,
+    custodianLabel: a.custodianLabel,
+  }));
+
+  if (holdings.length === 0) {
+    return (
+      <div className="mx-auto max-w-7xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Holdings
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              View and manage all your positions across accounts.
+            </p>
+          </div>
+        </div>
+
+        {/* Empty State */}
+        <div className="mt-16 flex flex-col items-center px-4 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <Package className="h-8 w-8 text-primary" />
+          </div>
+
+          <h2 className="mt-6 text-xl font-semibold text-foreground">
+            No holdings yet
+          </h2>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            Your holdings will appear here once you add positions to your
+            accounts. Start by creating an account and adding your first
+            holding.
+          </p>
+
+          {accountOptions.length > 0 && (
+            <div className="mt-8">
+              <AddHoldingDialog accounts={accountOptions} />
+            </div>
+          )}
+
+          <div className="mt-12 grid w-full max-w-lg gap-3 text-left sm:grid-cols-3">
+            {[
+              {
+                step: "1",
+                label: "Create an account",
+                desc: "Set up a brokerage or custodian.",
+              },
+              {
+                step: "2",
+                label: "Add a holding",
+                desc: "Enter stock, ETF, crypto positions.",
+              },
+              {
+                step: "3",
+                label: "Track everything",
+                desc: "Monitor value, gain/loss, allocation.",
+              },
+            ].map((item) => (
+              <div
+                key={item.step}
+                className="rounded-lg border border-border bg-card p-4 shadow-sm"
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                  {item.step}
+                </div>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {item.label}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {item.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const totalValueCents = holdings.reduce((sum, h) => sum + h.marketValueCents, 0);
+  const totalGainLossCents = holdings.reduce((sum, h) => sum + h.gainLossCents, 0);
+  const uniqueAccounts = new Set(holdings.map((h) => h.accountId)).size;
+
+  return (
+    <div className="mx-auto max-w-7xl">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Holdings
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {holdings.length} position{holdings.length !== 1 ? "s" : ""} across{" "}
+            {uniqueAccounts} account{uniqueAccounts !== 1 ? "s" : ""} ·{" "}
+            {formatCurrency(totalValueCents)} total ·{" "}
+            <span
+              className={
+                totalGainLossCents > 0
+                  ? "text-gain"
+                  : totalGainLossCents < 0
+                    ? "text-loss"
+                    : ""
+              }
+            >
+              {formatCurrency(totalGainLossCents, { showSign: true })} gain/loss
+            </span>
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href="/holdings/realized"
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            <Receipt className="h-4 w-4" />
+            Realized
+          </Link>
+          {accountOptions.length > 0 && (
+            <AddHoldingDialog accounts={accountOptions} />
+          )}
+        </div>
+      </div>
+
+      {/* DataTable */}
+      <div className="mt-6">
+        <HoldingsDataTable data={holdings} />
+      </div>
+    </div>
+  );
+}

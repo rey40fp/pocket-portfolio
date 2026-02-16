@@ -17,6 +17,7 @@ import { formatCurrency, formatPercent, formatShares, cn } from "@/lib/utils";
 import { AssetAllocationChart } from "@/components/dashboard/asset-allocation-chart";
 import { EditAccountDialog } from "@/components/forms/edit-account-dialog";
 import { DeleteAccountDialog } from "@/components/forms/delete-account-dialog";
+import { AddHoldingDialog } from "@/components/forms/add-holding-dialog";
 
 // ─── KPI Card (reused pattern) ──────────────────────────────────────
 
@@ -269,6 +270,7 @@ export default async function AccountDetailPage({ params }: AccountDetailPagePro
             <h2 className="text-sm font-medium text-muted-foreground">
               Holdings
             </h2>
+            <AddHoldingDialog accountId={account.id} />
           </div>
           <HoldingsTable holdings={holdings} />
         </div>

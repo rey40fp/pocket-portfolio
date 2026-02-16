@@ -84,13 +84,13 @@
 
 ## Phase 1H: Holdings UI
 
-- [ ] **1H.1** Build All Holdings page: sortable/filterable table (DataTable) with columns from frontend.mdc Table Patterns
-- [ ] **1H.2** Build Add Holding form: dynamic form that changes fields based on asset type selection
-- [ ] **1H.3** Build Holding detail page: price chart (Lightweight Charts for market assets), lot breakdown table, edit/liquidate actions
-- [ ] **1H.4** Build Multi-Lot view: expandable rows showing individual lots under a grouped holding
-- [ ] **1H.5** Build Liquidate Position dialog: sell price, shares sold, date, fees → shows calculated realized gain/loss before confirming
-- [ ] **1H.6** Build Realized Transactions page: table of all sold positions with gain/loss, date sold, and cumulative cashed-out total
-- [ ] **1H.7** Build Cross-Custodian Grouped view: toggle between "by account" and "grouped by ticker" views with weighted avg cost basis
+- [x] **1H.1** Build All Holdings page: sortable/filterable table (DataTable) with columns from frontend.mdc Table Patterns
+- [x] **1H.2** Build Add Holding form: dynamic form that changes fields based on asset type selection
+- [x] **1H.3** Build Holding detail page: price chart (Lightweight Charts for market assets), lot breakdown table, edit/liquidate actions
+- [x] **1H.4** Build Multi-Lot view: expandable rows showing individual lots under a grouped holding
+- [x] **1H.5** Build Liquidate Position dialog: sell price, shares sold, date, fees → shows calculated realized gain/loss before confirming
+- [x] **1H.6** Build Realized Transactions page: table of all sold positions with gain/loss, date sold, and cumulative cashed-out total
+- [x] **1H.7** Build Cross-Custodian Grouped view: toggle between "by account" and "grouped by ticker" views with weighted avg cost basis
 - [ ] **1H.8** Build CSV Import: upload dialog, column mapping preview, validation, bulk insert
 
 ## Phase 1I: Analytics UI

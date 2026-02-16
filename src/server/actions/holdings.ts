@@ -11,19 +11,27 @@ import {
 } from "@/server/validators/holdings";
 import {
   addLotSchema,
+  liquidateLotSchema,
   type AddLotInput,
 } from "@/server/validators/lots";
 import {
   createHolding as createHoldingInDB,
   updateHolding as updateHoldingInDB,
+  findHoldingByTickerInAccount,
 } from "@/server/dal/holdings";
-import { addLot } from "@/server/dal/lots";
+import { addLot, liquidateLot } from "@/server/dal/lots";
 
 /**
  * Add a new holding (with an initial lot) to an account.
  *
- * Creates the holding record first, then creates the first lot
- * under it with the provided cost basis and share data.
+ * If a holding with the same ticker already exists in the account
+ * (for market assets), adds a new lot to the existing holding instead
+ * of creating a duplicate. Each lot records a separate purchase with
+ * its own cost basis, share count, and acquisition date — this enables
+ * per-lot performance tracking and tax-lot accounting.
+ *
+ * For non-market assets (real estate, cash, other) a new holding is
+ * always created since they have no ticker to match on.
  */
 export async function addHolding(
   input: CreateHoldingInput & {
@@ -31,6 +39,10 @@ export async function addHolding(
     costBasisCents: number;
     costPerShareCents?: number | null;
     acquiredAt?: string | null;
+    currentValueCents?: number | null;
+    mortgageMonthlyCents?: number | null;
+    escrowMonthlyCents?: number | null;
+    interestRateBps?: number | null;
   },
 ) {
   const { userId } = await auth();
@@ -45,25 +57,44 @@ export async function addHolding(
     costBasisCents: addLotSchema.shape.costBasisCents,
     costPerShareCents: addLotSchema.shape.costPerShareCents,
     acquiredAt: addLotSchema.shape.acquiredAt,
+    currentValueCents: addLotSchema.shape.currentValueCents,
+    mortgageMonthlyCents: addLotSchema.shape.mortgageMonthlyCents,
+    escrowMonthlyCents: addLotSchema.shape.escrowMonthlyCents,
+    interestRateBps: addLotSchema.shape.interestRateBps,
   });
   const lotData = lotSchema.parse(input);
 
-  // Create the holding
-  const holding = await createHoldingInDB(holdingData);
+  // Check if a holding with the same ticker already exists in this account
+  const existingHolding = await findHoldingByTickerInAccount(
+    holdingData.accountId,
+    holdingData.ticker,
+  );
 
-  // Create the first lot under it
+  const holdingId = existingHolding
+    ? existingHolding.id
+    : (await createHoldingInDB(holdingData)).id;
+
+  // Create the lot under the holding (new or existing)
   await addLot({
-    holdingId: holding.id,
+    holdingId,
     shares: lotData.shares ?? null,
     costBasisCents: lotData.costBasisCents,
     costPerShareCents: lotData.costPerShareCents ?? null,
     acquiredAt: lotData.acquiredAt ? new Date(lotData.acquiredAt) : null,
+    currentValueCents: lotData.currentValueCents ?? null,
+    mortgageMonthlyCents: lotData.mortgageMonthlyCents ?? null,
+    escrowMonthlyCents: lotData.escrowMonthlyCents ?? null,
+    interestRateBps: lotData.interestRateBps ?? null,
   });
 
-  revalidatePath("/dashboard/holdings");
-  revalidatePath("/dashboard/accounts");
+  revalidatePath("/holdings");
+  revalidatePath("/accounts");
   revalidatePath("/dashboard");
-  return { success: true as const, holdingId: holding.id };
+  return {
+    success: true as const,
+    holdingId,
+    isNewLot: !!existingHolding,
+  };
 }
 
 /**
@@ -80,8 +111,8 @@ export async function updateHolding(
 
   const holding = await updateHoldingInDB(holdingId, validated);
 
-  revalidatePath("/dashboard/holdings");
-  revalidatePath(`/dashboard/holdings/${holdingId}`);
+  revalidatePath("/holdings");
+  revalidatePath(`/holdings/${holdingId}`);
   revalidatePath("/dashboard");
   return { success: true as const, holdingId: holding.id };
 }
@@ -100,8 +131,8 @@ export async function addLotToHolding(input: AddLotInput) {
     acquiredAt: validated.acquiredAt ? new Date(validated.acquiredAt) : null,
   });
 
-  revalidatePath("/dashboard/holdings");
-  revalidatePath(`/dashboard/holdings/${validated.holdingId}`);
+  revalidatePath("/holdings");
+  revalidatePath(`/holdings/${validated.holdingId}`);
   revalidatePath("/dashboard");
   return { success: true as const, lotId: lot.id };
 }
@@ -141,23 +172,71 @@ export async function importHoldingsFromCSV(
       source: "csv_import",
     });
 
-    const holding = await createHoldingInDB(holdingData);
+    // Reuse existing holding if same ticker already exists in this account
+    const existingHolding = await findHoldingByTickerInAccount(
+      accountId,
+      holdingData.ticker,
+    );
+
+    const holdingId = existingHolding
+      ? existingHolding.id
+      : (await createHoldingInDB(holdingData)).id;
 
     const lotValidated = addLotSchema.shape.costBasisCents.parse(row.costBasisCents);
 
     await addLot({
-      holdingId: holding.id,
+      holdingId,
       shares: row.shares ?? null,
       costBasisCents: lotValidated,
       costPerShareCents: row.costPerShareCents ?? null,
       acquiredAt: row.acquiredAt ? new Date(row.acquiredAt) : null,
     });
 
-    results.push({ holdingId: holding.id, name: row.name });
+    results.push({ holdingId, name: row.name });
   }
 
-  revalidatePath("/dashboard/holdings");
-  revalidatePath("/dashboard/accounts");
+  revalidatePath("/holdings");
+  revalidatePath("/accounts");
   revalidatePath("/dashboard");
   return { success: true as const, imported: results.length, holdings: results };
+}
+
+/**
+ * Liquidate (sell) shares from a specific lot.
+ *
+ * Handles both full and partial liquidation:
+ * - Full: all shares sold → lot marked as liquidated
+ * - Partial: some shares sold → lot split, sold portion marked as liquidated
+ *
+ * If all lots in the holding become liquidated, the holding itself
+ * is marked as fully liquidated.
+ */
+export async function liquidatePosition(input: {
+  lotId: string;
+  sharesSold: number;
+  sellPriceCents: number;
+  feesCents: number;
+  soldAt: string;
+}) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const validated = liquidateLotSchema.parse(input);
+
+  const result = await liquidateLot({
+    lotId: validated.lotId,
+    sharesSold: validated.sharesSold,
+    sellPriceCents: validated.sellPriceCents,
+    feesCents: validated.feesCents,
+    soldAt: new Date(validated.soldAt),
+  });
+
+  revalidatePath("/holdings");
+  revalidatePath("/accounts");
+  revalidatePath("/dashboard");
+
+  return {
+    success: true as const,
+    ...result,
+  };
 }

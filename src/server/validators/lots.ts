@@ -94,7 +94,29 @@ export const updateLotSchema = z.object({
     .nullish(),
 });
 
+// ─── Liquidation Validator ───────────────────────────────────────────
+
+export const liquidateLotSchema = z.object({
+  lotId: z.string().uuid("Invalid lot ID"),
+  sharesSold: z
+    .number()
+    .positive("Shares sold must be greater than 0"),
+  sellPriceCents: z
+    .number()
+    .int("Sell price must be an integer (cents)")
+    .positive("Sell price must be greater than 0"),
+  feesCents: z
+    .number()
+    .int("Fees must be an integer (cents)")
+    .nonnegative("Fees cannot be negative")
+    .default(0),
+  soldAt: z
+    .string()
+    .datetime({ message: "Invalid date format" }),
+});
+
 // ─── Inferred Types ─────────────────────────────────────────────────
 
 export type AddLotInput = z.infer<typeof addLotSchema>;
 export type UpdateLotInput = z.infer<typeof updateLotSchema>;
+export type LiquidateLotInput = z.infer<typeof liquidateLotSchema>;
