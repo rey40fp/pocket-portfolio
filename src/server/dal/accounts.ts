@@ -309,6 +309,70 @@ export async function softDeleteAccount(accountId: string) {
   return deleted;
 }
 
+/**
+ * Find an existing account by name (case-insensitive) for the authenticated user,
+ * or create a new one under the given portfolio if it doesn't exist.
+ *
+ * Used by CSV import to auto-provision accounts from the spreadsheet.
+ */
+export async function findOrCreateAccountByName(
+  portfolioId: string,
+  accountName: string,
+  accountNumber?: string | null,
+): Promise<{ id: string; name: string; isNew: boolean }> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const trimmedName = accountName.trim();
+
+  // Look up existing account by name (case-insensitive compare in JS)
+  const userAccounts = await db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), isNull(accounts.deletedAt)));
+
+  const existing = userAccounts.find(
+    (a) => a.name.toLowerCase() === trimmedName.toLowerCase(),
+  );
+
+  if (existing) {
+    return { id: existing.id, name: existing.name, isNew: false };
+  }
+
+  // Create new account with sensible defaults
+  const now = new Date();
+  const notes = accountNumber ? `Account #: ${accountNumber}` : null;
+
+  const [created] = await db
+    .insert(accounts)
+    .values({
+      portfolioId,
+      userId,
+      name: trimmedName,
+      custodian: "other",
+      accountType: "other",
+      notes,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  await logAuditEvent({
+    actorId: userId,
+    action: "CREATE",
+    resourceType: "account",
+    resourceId: created.id,
+    metadata: {
+      name: trimmedName,
+      custodian: "other",
+      source: "csv_import",
+      accountNumber: accountNumber ?? undefined,
+    },
+  });
+
+  return { id: created.id, name: created.name, isNew: true };
+}
+
 // ─── Account Detail Data ────────────────────────────────────────────
 
 export interface AccountKPIs {

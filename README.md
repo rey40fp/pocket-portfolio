@@ -56,11 +56,11 @@ src/
 
 ## CSV Import
 
-You can bulk-import holdings into any account using a CSV file. A downloadable template is provided within the app.
+Bulk-import holdings from a CSV file. Accounts are created automatically from the `account_name` column — no need to set them up first. A downloadable template is provided within the app.
 
 ### Getting the Template
 
-1. Go to the **Holdings** page
+1. Go to the **Holdings** page (or any empty state page)
 2. Click **Import CSV**
 3. Click **Download** to get the pre-formatted template
 
@@ -70,30 +70,36 @@ Or download directly from: `/templates/holdings-import-template.csv`
 
 | Column | Required | Description |
 |---|---|---|
+| `account_name` | Always | Account name (e.g. `Fidelity Brokerage`). Matched to existing accounts by name; new accounts are created automatically. |
+| `account_number` | Optional | Account number for reference (stored in account notes). |
 | `ticker` | For market assets | Ticker symbol (e.g. `AAPL`, `BTC`). Max 10 chars, alphanumeric. |
 | `name` | Always | Holding name (e.g. `Apple Inc.`). Max 200 characters. |
 | `asset_type` | Always | Must be one of: `stock`, `etf`, `mutual_fund`, `bond`, `crypto`, `real_estate`, `cash`, `other` |
 | `shares` | For market assets | Number of shares/units. Must be a positive number. |
 | `cost_per_share` | Optional | Cost per share in dollars (e.g. `195.50`). |
 | `total_cost` | Always | Total cost basis in dollars (e.g. `1955.00`). Must be non-negative. |
-| `date_acquired` | Optional | Date in `YYYY-MM-DD` format. Cannot be in the future. |
+| `date_acquired` | Optional | Date in `YYYY-MM-DD` format. Cannot be in the future. If omitted, performance tracking starts from the import date. |
 
 ### Validation Rules
 
 - **Market assets** (`stock`, `etf`, `mutual_fund`, `bond`, `crypto`) require `ticker` and `shares`
-- **All rows** require `name`, `asset_type`, and `total_cost`
+- **All rows** require `account_name`, `name`, `asset_type`, and `total_cost`
 - Dollar amounts should be plain numbers (e.g. `1955.00`), not formatted (no `$` or commas)
-- If a holding with the same ticker already exists in the target account, a new lot is added to the existing holding
+- Accounts are matched case-insensitively by name; new accounts default to custodian "Other"
+- If a holding with the same ticker already exists in the resolved account, a new lot is added
+- Dates are optional — omitting them starts performance tracking from the import date
 - Max 500 rows per import, max 5MB file size
+- You can edit any cell in the spreadsheet view before confirming the import
 
 ### Example CSV
 
 ```csv
-ticker,name,asset_type,shares,cost_per_share,total_cost,date_acquired
-AAPL,Apple Inc.,stock,10,195.50,1955.00,2024-06-15
-VOO,Vanguard S&P 500 ETF,etf,15,510.75,7661.25,2023-11-01
-,Primary Residence,real_estate,,,450000.00,2020-08-01
-,High Yield Savings,cash,,,25000.00,2024-01-01
+account_name,account_number,ticker,name,asset_type,shares,cost_per_share,total_cost,date_acquired
+Fidelity Brokerage,,AAPL,Apple Inc.,stock,10,195.50,1955.00,2024-06-15
+Fidelity Brokerage,,MSFT,Microsoft Corporation,stock,5,420.00,2100.00,
+Schwab IRA,1234-5678,VOO,Vanguard S&P 500 ETF,etf,15,510.75,7661.25,2023-11-01
+Personal Assets,,Primary Residence,real_estate,,,450000.00,2020-08-01
+Schwab HYSA,,High Yield Savings,cash,,,25000.00,
 ```
 
 ## Key Principles

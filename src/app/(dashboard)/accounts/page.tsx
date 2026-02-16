@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { Building2, Landmark, Briefcase, FileSpreadsheet, Download } from "lucide-react";
+import { Building2, Landmark, Briefcase, FileSpreadsheet, Download, Upload } from "lucide-react";
 import { getAccountsWithSummary } from "@/server/dal/accounts";
 import { getPortfolios, createPortfolio } from "@/server/dal/portfolios";
+import { ensureUserSynced } from "@/server/dal/users";
 import { formatCurrency } from "@/lib/utils";
 import { AddAccountDialog } from "@/components/forms/add-account-dialog";
+import { CsvImportDialog } from "@/components/forms/csv-import-dialog";
 
 // Map custodian keys to brand-style colors for card accents
 const CUSTODIAN_COLORS: Record<string, string> = {
@@ -24,6 +26,9 @@ function getCustodianColor(custodian: string) {
 }
 
 export default async function AccountsPage() {
+  // Ensure the Clerk user exists in the DB before any FK-dependent operations
+  await ensureUserSynced();
+
   const [accounts, portfolios] = await Promise.all([
     getAccountsWithSummary(),
     getPortfolios(),
@@ -71,8 +76,8 @@ export default async function AccountsPage() {
             <AddAccountDialog portfolioId={defaultPortfolio.id} />
           </div>
 
-          {/* CSV template tip */}
-          <div className="mt-6 flex w-full max-w-md items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3">
+          {/* CSV import section */}
+          <div className="mt-6 flex w-full max-w-md flex-col gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3">
             <div className="flex items-center gap-3 text-left">
               <FileSpreadsheet className="h-5 w-5 shrink-0 text-muted-foreground" />
               <div>
@@ -80,19 +85,29 @@ export default async function AccountsPage() {
                   Bulk import via CSV
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Download our template, fill it out with your holdings, then
-                  import them all at once from the Holdings page.
+                  Download our template, fill it out, then import everything.
+                  Accounts are created automatically from the spreadsheet.
                 </p>
               </div>
             </div>
-            <a
-              href="/templates/holdings-import-template.csv"
-              download="holdings-import-template.csv"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Template
-            </a>
+            <div className="flex items-center gap-2">
+              <a
+                href="/templates/holdings-import-template.csv"
+                download="holdings-import-template.csv"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download Template
+              </a>
+              <CsvImportDialog
+                trigger={
+                  <button className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                    <Upload className="h-3.5 w-3.5" />
+                    Import CSV
+                  </button>
+                }
+              />
+            </div>
           </div>
 
           <div className="mt-12 grid w-full max-w-lg gap-3 text-left sm:grid-cols-3">

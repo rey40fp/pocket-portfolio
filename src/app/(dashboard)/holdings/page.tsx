@@ -47,12 +47,12 @@ export default async function HoldingsPage() {
             accounts. Add them one by one or bulk-import from a CSV file.
           </p>
 
-          {accountOptions.length > 0 && (
-            <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
+          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
+            {accountOptions.length > 0 && (
               <AddHoldingDialog accounts={accountOptions} />
-              <CsvImportDialog accounts={accountOptions} />
-            </div>
-          )}
+            )}
+            <CsvImportDialog />
+          </div>
 
           {/* CSV template download tip */}
           <div className="mt-6 flex w-full max-w-md items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3">
@@ -155,11 +155,9 @@ export default async function HoldingsPage() {
             <Receipt className="h-4 w-4" />
             Realized
           </Link>
+          <CsvImportDialog />
           {accountOptions.length > 0 && (
-            <>
-              <CsvImportDialog accounts={accountOptions} />
-              <AddHoldingDialog accounts={accountOptions} />
-            </>
+            <AddHoldingDialog accounts={accountOptions} />
           )}
         </div>
       </div>

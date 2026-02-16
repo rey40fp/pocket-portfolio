@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { users } from "@/db/schema/users";
 import { eq } from "drizzle-orm";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import type { UserRole } from "@/lib/constants";
 import { DEFAULT_USER_ROLE } from "@/lib/constants";
 
@@ -113,4 +113,42 @@ export async function getUserRole(targetUserId: string): Promise<UserRole> {
     .where(eq(users.id, targetUserId));
 
   return (user?.role as UserRole) ?? DEFAULT_USER_ROLE;
+}
+
+/**
+ * Ensure the authenticated Clerk user exists in the local `users` table.
+ *
+ * Call this from server components / pages that need the user row to exist
+ * (e.g., before creating portfolios, accounts, or any table with a FK to
+ * users.id). This is a no-op if the user already exists.
+ *
+ * This replaces the need for a Clerk webhook during development and serves
+ * as a safety net in production if the webhook delivery is delayed.
+ */
+export async function ensureUserSynced() {
+  const { userId } = await auth();
+  if (!userId) return null;
+
+  // Fast-path: check if user already exists
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId));
+
+  if (existing) return existing;
+
+  // User doesn't exist — fetch details from Clerk and sync
+  const clerkUser = await currentUser();
+  if (!clerkUser) return null;
+
+  const synced = await syncUserFromClerk({
+    id: clerkUser.id,
+    email: clerkUser.emailAddresses[0]?.emailAddress ?? "",
+    displayName:
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
+      null,
+    avatarUrl: clerkUser.imageUrl ?? null,
+  });
+
+  return synced;
 }

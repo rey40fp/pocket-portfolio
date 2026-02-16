@@ -20,6 +20,8 @@ import {
   findHoldingByTickerInAccount,
 } from "@/server/dal/holdings";
 import { addLot, liquidateLot } from "@/server/dal/lots";
+import { findOrCreateAccountByName } from "@/server/dal/accounts";
+import { getPortfolios, createPortfolio } from "@/server/dal/portfolios";
 
 /**
  * Add a new holding (with an initial lot) to an account.
@@ -140,12 +142,18 @@ export async function addLotToHolding(input: AddLotInput) {
 /**
  * Import holdings from a CSV file.
  *
- * Accepts an array of pre-parsed rows (client parses the CSV,
- * server validates and inserts). Each row creates a holding + lot.
+ * Each row specifies an account_name (and optional account_number).
+ * Accounts are auto-created if they don't already exist for this user.
+ * If a holding with the same ticker already exists in the resolved account,
+ * a new lot is added to the existing holding (multi-lot support).
+ *
+ * Dates are optional — when omitted, lots are created without an
+ * acquisition date and performance tracking starts from inception.
  */
 export async function importHoldingsFromCSV(
-  accountId: string,
   rows: Array<{
+    accountName: string;
+    accountNumber?: string | null;
     ticker?: string | null;
     name: string;
     assetType: string;
@@ -158,14 +166,37 @@ export async function importHoldingsFromCSV(
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const accountIdSchema = z.string().uuid("Invalid account ID");
-  accountIdSchema.parse(accountId);
+  // Ensure a default portfolio exists for account creation
+  const portfolios = await getPortfolios();
+  let defaultPortfolio = portfolios.find((p) => p.isDefault) ?? portfolios[0];
+  if (!defaultPortfolio) {
+    defaultPortfolio = await createPortfolio({
+      name: "My Portfolio",
+      isDefault: true,
+    });
+  }
 
-  const results: Array<{ holdingId: string; name: string }> = [];
+  // Cache resolved accounts to avoid repeated lookups within the same import
+  const accountCache = new Map<string, { id: string; name: string; isNew: boolean }>();
+  const results: Array<{ holdingId: string; name: string; accountName: string }> = [];
+  const accountsCreated: string[] = [];
 
   for (const row of rows) {
+    // Resolve account (find existing or create new)
+    const accountKey = row.accountName.trim().toLowerCase();
+    let account = accountCache.get(accountKey);
+    if (!account) {
+      account = await findOrCreateAccountByName(
+        defaultPortfolio.id,
+        row.accountName,
+        row.accountNumber,
+      );
+      accountCache.set(accountKey, account);
+      if (account.isNew) accountsCreated.push(account.name);
+    }
+
     const holdingData = createHoldingSchema.parse({
-      accountId,
+      accountId: account.id,
       ticker: row.ticker,
       name: row.name,
       assetType: row.assetType,
@@ -174,7 +205,7 @@ export async function importHoldingsFromCSV(
 
     // Reuse existing holding if same ticker already exists in this account
     const existingHolding = await findHoldingByTickerInAccount(
-      accountId,
+      account.id,
       holdingData.ticker,
     );
 
@@ -192,13 +223,18 @@ export async function importHoldingsFromCSV(
       acquiredAt: row.acquiredAt ? new Date(row.acquiredAt) : null,
     });
 
-    results.push({ holdingId, name: row.name });
+    results.push({ holdingId, name: row.name, accountName: account.name });
   }
 
   revalidatePath("/holdings");
   revalidatePath("/accounts");
   revalidatePath("/dashboard");
-  return { success: true as const, imported: results.length, holdings: results };
+  return {
+    success: true as const,
+    imported: results.length,
+    holdings: results,
+    accountsCreated,
+  };
 }
 
 /**
