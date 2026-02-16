@@ -20,11 +20,28 @@ const sql = postgres(DATABASE_URL, { max: 1 });
 
 // ─── Sample Data ─────────────────────────────────────────────
 
-const USER_1 = "user_seed_alice_001";
+const USER_1 = "user_39l7CWO6FAzLaIfp0UooopxaSHL"; // Real Clerk user (Alice's data)
 const USER_2 = "user_seed_bob_002";
+
+const OLD_USER_1 = "user_seed_alice_001"; // Previous fake ID to clean up
 
 async function seed() {
   console.log("🌱 Seeding database...\n");
+
+  // ── Cleanup old seed data ─────────────────────────────────
+  console.log("  Cleaning up old seed data...");
+  for (const uid of [OLD_USER_1, USER_1, USER_2]) {
+    await sql`DELETE FROM audit_logs WHERE actor_id = ${uid}`;
+    await sql`DELETE FROM household_members WHERE user_id = ${uid}`;
+    await sql`DELETE FROM realized_transactions WHERE user_id = ${uid}`;
+    await sql`DELETE FROM lots WHERE user_id = ${uid}`;
+    await sql`DELETE FROM holdings WHERE user_id = ${uid}`;
+    await sql`DELETE FROM accounts WHERE user_id = ${uid}`;
+    await sql`DELETE FROM portfolios WHERE user_id = ${uid}`;
+  }
+  await sql`DELETE FROM households WHERE created_by IN (${OLD_USER_1}, ${USER_1})`;
+  await sql`DELETE FROM users WHERE id IN (${OLD_USER_1}, ${USER_2})`;
+  console.log("  ✓ Old data cleaned\n");
 
   // ── Users ────────────────────────────────────────────────
   console.log("  Creating users...");
@@ -32,7 +49,7 @@ async function seed() {
     INSERT INTO users (id, email, display_name, role) VALUES
       (${USER_1}, 'alice@example.com', 'Alice Johnson', 'user'),
       (${USER_2}, 'bob@example.com', 'Bob Smith', 'user')
-    ON CONFLICT (id) DO NOTHING
+    ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name
   `;
 
   // ── Portfolios ───────────────────────────────────────────
@@ -239,17 +256,90 @@ async function seedAccounts(alicePid: string, bobPid: string) {
       (${household.id}, ${USER_2}, 'member', 'active', NOW())
   `;
 
+  // ── Price Cache ─────────────────────────────────────────
+  console.log("  Seeding price cache...");
+
+  const priceSeedData = [
+    { ticker: "AAPL",  price: 23500, prevClose: 23350, name: "Apple Inc." },
+    { ticker: "NVDA",  price: 13800, prevClose: 13650, name: "NVIDIA Corp." },
+    { ticker: "MSFT",  price: 42500, prevClose: 42200, name: "Microsoft Corp." },
+    { ticker: "JNJ",   price: 15500, prevClose: 15600, name: "Johnson & Johnson" },
+    { ticker: "VTI",   price: 27500, prevClose: 27400, name: "Vanguard Total Stock Market ETF" },
+    { ticker: "VXUS",  price: 6200,  prevClose: 6180,  name: "Vanguard Total International ETF" },
+    { ticker: "BND",   price: 7200,  prevClose: 7210,  name: "Vanguard Total Bond ETF" },
+    { ticker: "BTC",   price: 9750000, prevClose: 9680000, name: "Bitcoin" },
+    { ticker: "ETH",   price: 380000,  prevClose: 375000,  name: "Ethereum" },
+    { ticker: "SPY",   price: 57000, prevClose: 56800, name: "SPDR S&P 500 ETF" },
+    { ticker: "QQQ",   price: 52000, prevClose: 51700, name: "Invesco QQQ Trust" },
+    { ticker: "TSLA",  price: 35000, prevClose: 34500, name: "Tesla Inc." },
+    { ticker: "AMZN",  price: 19500, prevClose: 19350, name: "Amazon.com Inc." },
+    { ticker: "GOOGL", price: 17800, prevClose: 17650, name: "Alphabet Inc." },
+  ];
+
+  for (const p of priceSeedData) {
+    const changeCents = p.price - p.prevClose;
+    const changePercent = ((changeCents / p.prevClose) * 100).toFixed(4);
+    await sql`
+      INSERT INTO price_cache (ticker, price_cents, previous_close_cents, change_cents, change_percent, name, updated_at)
+      VALUES (${p.ticker}, ${p.price}, ${p.prevClose}, ${changeCents}, ${changePercent}, ${p.name}, NOW())
+      ON CONFLICT (ticker) DO UPDATE SET
+        price_cents = EXCLUDED.price_cents,
+        previous_close_cents = EXCLUDED.previous_close_cents,
+        change_cents = EXCLUDED.change_cents,
+        change_percent = EXCLUDED.change_percent,
+        name = EXCLUDED.name,
+        updated_at = NOW()
+    `;
+  }
+
+  // ── Audit Logs ──────────────────────────────────────────
+  console.log("  Creating audit log entries...");
+
+  const auditEntries = [
+    { actor: USER_1, action: "CREATE", resource: "portfolio", rid: alicePid,  meta: { name: "Alice's Portfolio" },                            ago: "10 days" },
+    { actor: USER_1, action: "CREATE", resource: "account",   rid: schwabId,  meta: { name: "Schwab Brokerage", custodian: "schwab" },        ago: "10 days" },
+    { actor: USER_1, action: "CREATE", resource: "account",   rid: vanguardId, meta: { name: "Vanguard Roth IRA", custodian: "vanguard" },   ago: "9 days" },
+    { actor: USER_1, action: "CREATE", resource: "account",   rid: coinbaseId, meta: { name: "Coinbase Crypto", custodian: "coinbase" },     ago: "9 days" },
+    { actor: USER_1, action: "CREATE", resource: "holding",   rid: aliceHoldings[0].id, meta: { ticker: "AAPL", name: "Apple Inc." },        ago: "8 days" },
+    { actor: USER_1, action: "CREATE", resource: "holding",   rid: aliceHoldings[1].id, meta: { ticker: "NVDA", name: "NVIDIA Corp." },      ago: "8 days" },
+    { actor: USER_1, action: "CREATE", resource: "holding",   rid: aliceHoldings[4].id, meta: { ticker: "VTI", name: "Vanguard Total Stock Market ETF" }, ago: "7 days" },
+    { actor: USER_1, action: "CREATE", resource: "holding",   rid: aliceHoldings[7].id, meta: { ticker: "BTC", name: "Bitcoin" },            ago: "6 days" },
+    { actor: USER_1, action: "UPDATE", resource: "holding",   rid: aliceHoldings[0].id, meta: { changes: ["shares"], ticker: "AAPL" },       ago: "3 days" },
+    { actor: USER_1, action: "CREATE", resource: "household", rid: household.id, meta: { name: "Johnson-Smith Family" },                     ago: "2 days" },
+    { actor: USER_1, action: "DELETE", resource: "lot",       rid: aaplLot.id, meta: { ticker: "AAPL", sharesSold: "10" },                   ago: "1 day" },
+    { actor: USER_1, action: "UPDATE", resource: "account",   rid: schwabId,  meta: { changes: ["notes"], name: "Schwab Brokerage" },        ago: "5 hours" },
+  ];
+
+  for (const e of auditEntries) {
+    await sql`
+      INSERT INTO audit_logs (actor_id, action, resource_type, resource_id, metadata, created_at)
+      VALUES (
+        ${e.actor},
+        ${e.action},
+        ${e.resource},
+        ${e.rid},
+        ${JSON.stringify(e.meta)}::jsonb,
+        NOW() - ${e.ago}::interval
+      )
+    `;
+  }
+
   // ── Summary ──────────────────────────────────────────────
   const holdingCount = await sql`SELECT COUNT(*) as count FROM holdings`;
   const lotCount = await sql`SELECT COUNT(*) as count FROM lots`;
   const txCount = await sql`SELECT COUNT(*) as count FROM realized_transactions`;
 
+  const priceCount = await sql`SELECT COUNT(*) as count FROM price_cache`;
+  const auditCount = await sql`SELECT COUNT(*) as count FROM audit_logs`;
+
   console.log(`\n🎉 Seed complete!`);
-  console.log(`   Users: 2`);
+  console.log(`   Users: 2 (Alice = ${USER_1})`);
   console.log(`   Accounts: 6`);
   console.log(`   Holdings: ${holdingCount[0].count}`);
   console.log(`   Lots: ${lotCount[0].count}`);
   console.log(`   Realized transactions: ${txCount[0].count}`);
+  console.log(`   Price cache: ${priceCount[0].count} tickers`);
+  console.log(`   Audit logs: ${auditCount[0].count}`);
   console.log(`   Household: 1 (2 members)`);
 }
 

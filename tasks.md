@@ -66,19 +66,19 @@
 
 - [x] **1F.1** Create sidebar navigation component: logo, nav links (Dashboard, Accounts, Holdings, Analytics, News, Household, Settings), collapse on mobile
 - [x] **1F.2** Create dashboard layout with sidebar + header (UserButton, household selector dropdown) + main content area
-- [ ] **1F.3** Build Dashboard home page: Net Worth KPI card, Day Change KPI card, Total Gain/Loss KPI card (use Tremor KPI components)
-- [ ] **1F.4** Build Net Worth History area chart (Tremor AreaChart, green gradient, period selector: 1W/1M/3M/6M/1Y/ALL)
-- [ ] **1F.5** Build Asset Allocation donut chart (Tremor DonutChart, by asset class)
-- [ ] **1F.6** Build Top Movers section (top 3 gainers, top 3 losers from user's holdings)
-- [ ] **1F.7** Build Recent Activity feed (last 10 actions from audit_logs)
-- [ ] **1F.8** Add loading.tsx skeletons and error.tsx for dashboard route
-- [ ] **1F.9** Add empty state for new users with no holdings (welcome message + "Add your first account" CTA)
+- [x] **1F.3** Build Dashboard home page: Net Worth KPI card, Day Change KPI card, Total Gain/Loss KPI card (use Tremor KPI components)
+- [x] **1F.4** Build Net Worth History area chart (Tremor AreaChart, green gradient, period selector: 1W/1M/3M/6M/1Y/ALL)
+- [x] **1F.5** Build Asset Allocation donut chart (Tremor DonutChart, by asset class)
+- [x] **1F.6** Build Top Movers section (top 3 gainers, top 3 losers from user's holdings)
+- [x] **1F.7** Build Recent Activity feed (last 10 actions from audit_logs)
+- [x] **1F.8** Add loading.tsx skeletons and error.tsx for dashboard route
+- [x] **1F.9** Add empty state for new users with no holdings (welcome message + "Add your first account" CTA)
 
 ## Phase 1G: Accounts UI
 
-- [ ] **1G.1** Build Accounts list page: cards showing each account (name, custodian, total value, number of holdings)
-- [ ] **1G.2** Build Add Account dialog/modal: form with fields from SPEC.md 3.3, custodian dropdown with search
-- [ ] **1G.3** Build Account detail page: holdings table, account-level KPI cards, account-level allocation chart
+- [x] **1G.1** Build Accounts list page: cards showing each account (name, custodian, total value, number of holdings)
+- [x] **1G.2** Build Add Account dialog/modal: form with fields from SPEC.md 3.3, custodian dropdown with search
+- [x] **1G.3** Build Account detail page: holdings table, account-level KPI cards, account-level allocation chart
 - [ ] **1G.4** Build Edit Account dialog and Delete Account confirmation
 - [ ] **1G.5** Add loading and empty states for accounts pages
 

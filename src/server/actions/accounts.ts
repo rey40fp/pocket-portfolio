@@ -27,7 +27,7 @@ export async function createAccount(input: CreateAccountInput) {
 
   const account = await createAccountInDB(validated);
 
-  revalidatePath("/dashboard/accounts");
+  revalidatePath("/accounts");
   revalidatePath("/dashboard");
   return { success: true as const, accountId: account.id };
 }
@@ -46,8 +46,8 @@ export async function updateAccount(
 
   const account = await updateAccountInDB(accountId, validated);
 
-  revalidatePath("/dashboard/accounts");
-  revalidatePath(`/dashboard/accounts/${accountId}`);
+  revalidatePath("/accounts");
+  revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/dashboard");
   return { success: true as const, accountId: account.id };
 }
@@ -63,7 +63,7 @@ export async function deleteAccount(input: DeleteAccountInput) {
 
   await softDeleteAccount(validated.accountId);
 
-  revalidatePath("/dashboard/accounts");
+  revalidatePath("/accounts");
   revalidatePath("/dashboard");
   return { success: true as const };
 }
