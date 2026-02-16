@@ -91,7 +91,7 @@
 - [x] **1H.5** Build Liquidate Position dialog: sell price, shares sold, date, fees → shows calculated realized gain/loss before confirming
 - [x] **1H.6** Build Realized Transactions page: table of all sold positions with gain/loss, date sold, and cumulative cashed-out total
 - [x] **1H.7** Build Cross-Custodian Grouped view: toggle between "by account" and "grouped by ticker" views with weighted avg cost basis
-- [ ] **1H.8** Build CSV Import: upload dialog, column mapping preview, validation, bulk insert
+- [x] **1H.8** Build CSV Import: upload dialog, column mapping preview, validation, bulk insert
 
 ## Phase 1I: Analytics UI
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { Building2, Landmark, Briefcase } from "lucide-react";
+import { Building2, Landmark, Briefcase, FileSpreadsheet, Download } from "lucide-react";
 import { getAccountsWithSummary } from "@/server/dal/accounts";
-import { getPortfolios } from "@/server/dal/portfolios";
+import { getPortfolios, createPortfolio } from "@/server/dal/portfolios";
 import { formatCurrency } from "@/lib/utils";
 import { AddAccountDialog } from "@/components/forms/add-account-dialog";
 
@@ -29,7 +29,15 @@ export default async function AccountsPage() {
     getPortfolios(),
   ]);
 
-  const defaultPortfolio = portfolios.find((p) => p.isDefault) ?? portfolios[0];
+  // Auto-provision a default portfolio for new users so the Add Account
+  // button is always available on first visit.
+  let defaultPortfolio = portfolios.find((p) => p.isDefault) ?? portfolios[0];
+  if (!defaultPortfolio) {
+    defaultPortfolio = await createPortfolio({
+      name: "My Portfolio",
+      isDefault: true,
+    });
+  }
 
   if (accounts.length === 0) {
     return (
@@ -60,9 +68,31 @@ export default async function AccountsPage() {
           </p>
 
           <div className="mt-8">
-            {defaultPortfolio && (
-              <AddAccountDialog portfolioId={defaultPortfolio.id} />
-            )}
+            <AddAccountDialog portfolioId={defaultPortfolio.id} />
+          </div>
+
+          {/* CSV template tip */}
+          <div className="mt-6 flex w-full max-w-md items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3">
+            <div className="flex items-center gap-3 text-left">
+              <FileSpreadsheet className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  Bulk import via CSV
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Download our template, fill it out with your holdings, then
+                  import them all at once from the Holdings page.
+                </p>
+              </div>
+            </div>
+            <a
+              href="/templates/holdings-import-template.csv"
+              download="holdings-import-template.csv"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Template
+            </a>
           </div>
 
           <div className="mt-12 grid w-full max-w-lg gap-3 text-left sm:grid-cols-3">
@@ -75,7 +105,7 @@ export default async function AccountsPage() {
               {
                 step: "2",
                 label: "Add holdings",
-                desc: "Enter stocks, ETFs, crypto, etc.",
+                desc: "One by one or bulk CSV import.",
               },
               {
                 step: "3",
@@ -120,9 +150,7 @@ export default async function AccountsPage() {
           </p>
         </div>
 
-        {defaultPortfolio && (
-          <AddAccountDialog portfolioId={defaultPortfolio.id} />
-        )}
+        <AddAccountDialog portfolioId={defaultPortfolio.id} />
       </div>
 
       {/* Account Cards Grid */}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Wallet, PlusCircle } from "lucide-react";
+import { Wallet, PlusCircle, FileSpreadsheet, Download } from "lucide-react";
 import { getDashboardKPIs, getNetWorthHistory, getAssetAllocation, getTopMovers, getRecentActivity } from "@/server/dal/dashboard";
 import { DashboardKPICards } from "@/components/dashboard/kpi-cards";
 import { NetWorthChart } from "@/components/dashboard/net-worth-chart";
@@ -48,10 +48,34 @@ export default async function DashboardPage() {
             Add your first account
           </Link>
 
+          {/* CSV template tip */}
+          <div className="mt-6 flex w-full max-w-md items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3">
+            <div className="flex items-center gap-3 text-left">
+              <FileSpreadsheet className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  Have a spreadsheet?
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Download our CSV template, fill it out, and bulk-import all
+                  your holdings at once after creating an account.
+                </p>
+              </div>
+            </div>
+            <a
+              href="/templates/holdings-import-template.csv"
+              download="holdings-import-template.csv"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Template
+            </a>
+          </div>
+
           <div className="mt-12 grid w-full max-w-lg gap-3 text-left sm:grid-cols-3">
             {[
               { step: "1", label: "Add an account", desc: "Schwab, Fidelity, Coinbase, etc." },
-              { step: "2", label: "Add holdings", desc: "Enter your stocks, crypto, and more." },
+              { step: "2", label: "Add holdings", desc: "One by one or bulk CSV import." },
               { step: "3", label: "Track growth", desc: "See net worth, gains, and allocation." },
             ].map((item) => (
               <div
