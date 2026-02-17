@@ -54,7 +54,7 @@ const percentToBps = (value: string): number => {
 
 // ─── Form Schema ─────────────────────────────────────────────────────
 
-const assetTypeKeys = Object.keys(ASSET_TYPES) as [string, ...string[]];
+const assetTypeKeys = Object.keys(ASSET_TYPES) as [AssetType, ...AssetType[]];
 
 const addHoldingFormSchema = z
   .object({

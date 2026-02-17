@@ -159,7 +159,7 @@
 
 ## Phase 1I: Analytics UI
 
-- [ ] **1I.1** Build Analytics page: portfolio value over time chart with deposit/withdrawal toggle
+- [x] **1I.1** Build Analytics page: portfolio value over time chart with deposit/withdrawal toggle
 - [ ] **1I.2** Build Asset Allocation breakdown views: by class, by custodian, by account type (tab selector)
 - [ ] **1I.3** Build Performance summary: total return ($), total return (%), best performer, worst performer
 - [ ] **1I.4** Build Net Worth toggle: include/exclude real estate and illiquid assets

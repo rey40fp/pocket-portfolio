@@ -30,11 +30,11 @@ interface ActiveShapeProps {
   outerRadius: number;
   startAngle: number;
   endAngle: number;
-  fill: string;
+  fill?: string;
 }
 
 function renderActiveShape(props: ActiveShapeProps) {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill = "hsl(215, 16%, 65%)" } = props;
   return (
     <g>
       <Sector
@@ -93,8 +93,7 @@ export function AssetAllocationChart({ data }: AssetAllocationChartProps) {
                 outerRadius={85}
                 paddingAngle={2}
                 strokeWidth={0}
-                activeIndex={activeIndex ?? undefined}
-                activeShape={renderActiveShape}
+                {...({ activeIndex: activeIndex ?? undefined, activeShape: renderActiveShape } as Record<string, unknown>)}
                 onMouseEnter={onPieEnter}
                 onMouseLeave={onPieLeave}
                 animationDuration={600}

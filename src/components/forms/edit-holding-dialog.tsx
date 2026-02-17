@@ -31,6 +31,7 @@ import {
   MARKET_ASSET_TYPES,
   SECTORS,
   type AssetType,
+  type Sector,
 } from "@/lib/constants";
 import { updateHolding } from "@/server/actions/holdings";
 import {
@@ -40,8 +41,8 @@ import {
 
 // ─── Form Schema ────────────────────────────────────────────────────
 
-const assetTypeKeys = Object.keys(ASSET_TYPES) as [string, ...string[]];
-const sectorKeys = Object.keys(SECTORS) as [string, ...string[]];
+const assetTypeKeys = Object.keys(ASSET_TYPES) as [AssetType, ...AssetType[]];
+const sectorKeys = Object.keys(SECTORS) as [Sector, ...Sector[]];
 
 const editHoldingFormSchema = z.object({
   name: z
@@ -157,7 +158,7 @@ export function EditHoldingDialog({
     resolver: zodResolver(editHoldingFormSchema),
     defaultValues: {
       name: currentValues.name,
-      assetType: currentValues.assetType,
+      assetType: currentValues.assetType as AssetType,
       ticker: currentValues.ticker ?? "",
       sector: (currentValues.sector ?? undefined) as EditHoldingFormValues["sector"],
       notes: currentValues.notes ?? "",
@@ -224,7 +225,7 @@ export function EditHoldingDialog({
     if (!open) {
       reset({
         name: currentValues.name,
-        assetType: currentValues.assetType,
+        assetType: currentValues.assetType as AssetType,
         ticker: currentValues.ticker ?? "",
         sector: (currentValues.sector ?? undefined) as EditHoldingFormValues["sector"],
         notes: currentValues.notes ?? "",
@@ -277,7 +278,7 @@ export function EditHoldingDialog({
             <Select
               value={selectedAssetType}
               onValueChange={(val) =>
-                setValue("assetType", val, {
+                setValue("assetType", val as AssetType, {
                   shouldValidate: true,
                   shouldDirty: true,
                 })
