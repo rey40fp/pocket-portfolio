@@ -3,7 +3,7 @@ import { holdings } from "@/db/schema/holdings";
 import { accounts } from "@/db/schema/accounts";
 import { lots } from "@/db/schema/lots";
 import { priceCache } from "@/db/schema/price-cache";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, inArray } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { logAuditEvent } from "./audit";
 import {
@@ -37,6 +37,74 @@ interface UpdateHoldingInput {
   assetCategory?: AssetCategory | null;
   sector?: Sector | null;
   notes?: string | null;
+}
+
+// ─── Cron / System Functions (no auth) ───────────────────────────────
+
+export interface TrackedTicker {
+  ticker: string;
+  assetType: string;
+}
+
+/**
+ * Get all unique tickers being tracked across ALL users' holdings.
+ * Does NOT require authentication — designed to be called from the
+ * cron job context that refreshes the price cache.
+ *
+ * Returns each unique ticker once, along with its asset type so the
+ * caller knows whether to use the stock or crypto endpoint.
+ */
+export async function getAllTrackedTickers(): Promise<TrackedTicker[]> {
+  const rows = await db
+    .selectDistinctOn([holdings.ticker], {
+      ticker: holdings.ticker,
+      assetType: holdings.assetType,
+    })
+    .from(holdings)
+    .where(
+      and(
+        isNotNull(holdings.ticker),
+        isNull(holdings.deletedAt),
+        eq(holdings.isLiquidated, false),
+      ),
+    );
+
+  const result: TrackedTicker[] = [];
+  for (const r of rows) {
+    if (r.ticker) {
+      result.push({ ticker: r.ticker.toUpperCase(), assetType: r.assetType });
+    }
+  }
+  return result;
+}
+
+/**
+ * Get all unique tickers tracked by a specific user.
+ * Used by the manual refresh Server Action (user-scoped).
+ */
+export async function getUserTrackedTickers(userId: string): Promise<TrackedTicker[]> {
+  const rows = await db
+    .selectDistinctOn([holdings.ticker], {
+      ticker: holdings.ticker,
+      assetType: holdings.assetType,
+    })
+    .from(holdings)
+    .where(
+      and(
+        eq(holdings.userId, userId),
+        isNotNull(holdings.ticker),
+        isNull(holdings.deletedAt),
+        eq(holdings.isLiquidated, false),
+      ),
+    );
+
+  const result: TrackedTicker[] = [];
+  for (const r of rows) {
+    if (r.ticker) {
+      result.push({ ticker: r.ticker.toUpperCase(), assetType: r.assetType });
+    }
+  }
+  return result;
 }
 
 // ─── DAL Functions ───────────────────────────────────────────────────
@@ -311,6 +379,7 @@ export async function getHoldingDetailData(
 
   // 4. Fetch cached price for market assets
   const isMarket = isMarketAsset(holding.assetType);
+  let priceDollars = 0;
   let priceCents = 0;
 
   if (isMarket && holding.ticker) {
@@ -318,6 +387,8 @@ export async function getHoldingDetailData(
       .select()
       .from(priceCache)
       .where(eq(priceCache.ticker, holding.ticker.toUpperCase()));
+    // Prefer priceDollars (full precision) over priceCents (truncated for sub-cent prices)
+    priceDollars = price?.priceDollars ?? (price?.priceCents ? price.priceCents / 100 : 0);
     priceCents = price?.priceCents ?? 0;
   }
 
@@ -334,8 +405,9 @@ export async function getHoldingDetailData(
     const costPerShare = lot.costPerShareCents ?? (shares > 0 ? Math.round(costBasis / shares) : 0);
 
     let currentValue: number;
-    if (isMarket && priceCents > 0) {
-      currentValue = Math.round(shares * priceCents);
+    if (isMarket && priceDollars > 0) {
+      // Use priceDollars for full precision (supports sub-cent meme coins)
+      currentValue = Math.round(shares * priceDollars * 100);
     } else {
       currentValue = lot.currentValueCents ?? costBasis;
     }
@@ -406,7 +478,7 @@ export async function getHoldingDetailData(
     kpis: {
       totalShares,
       totalCostBasisCents: totalCostBasis,
-      currentPriceCents: isMarket ? priceCents : 0,
+      currentPriceCents: isMarket ? Math.round(priceDollars * 100) : 0,
       marketValueCents: totalCurrentValue,
       gainLossCents,
       gainLossPercent,
@@ -520,7 +592,13 @@ export async function getAllHoldingsWithDetails(): Promise<HoldingRow[]> {
 
     if (isMarketAsset(holding.assetType) && holding.ticker) {
       const price = priceMap.get(holding.ticker.toUpperCase());
-      currentValue = price ? Math.round(shares * price.priceCents) : costBasis;
+      if (price) {
+        // Prefer priceDollars (full precision) for sub-cent meme coins
+        const dollars = price.priceDollars ?? price.priceCents / 100;
+        currentValue = Math.round(shares * dollars * 100);
+      } else {
+        currentValue = costBasis;
+      }
     } else {
       currentValue = lot.currentValueCents ?? costBasis;
     }
@@ -558,7 +636,11 @@ export async function getAllHoldingsWithDetails(): Promise<HoldingRow[]> {
     const currentPriceCents = (() => {
       if (isMarketAsset(h.assetType) && h.ticker) {
         const price = priceMap.get(h.ticker.toUpperCase());
-        return price?.priceCents ?? 0;
+        if (price) {
+          const dollars = price.priceDollars ?? price.priceCents / 100;
+          return Math.round(dollars * 100);
+        }
+        return 0;
       }
       return agg.totalShares > 0
         ? Math.round(agg.totalCurrentValue / agg.totalShares)

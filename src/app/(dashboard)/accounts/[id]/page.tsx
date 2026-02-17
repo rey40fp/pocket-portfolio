@@ -13,11 +13,13 @@ import {
 } from "lucide-react";
 import { getAccountDetailData } from "@/server/dal/accounts";
 import type { AccountHoldingRow } from "@/server/dal/accounts";
+import { MARKET_ASSET_TYPES, type AssetType } from "@/lib/constants";
 import { formatCurrency, formatPercent, formatShares, cn } from "@/lib/utils";
 import { AssetAllocationChart } from "@/components/dashboard/asset-allocation-chart";
 import { EditAccountDialog } from "@/components/forms/edit-account-dialog";
 import { DeleteAccountDialog } from "@/components/forms/delete-account-dialog";
 import { AddHoldingDialog } from "@/components/forms/add-holding-dialog";
+import { HoldingRowActions } from "@/components/shared/holding-row-actions";
 
 // ─── KPI Card (reused pattern) ──────────────────────────────────────
 
@@ -59,6 +61,10 @@ function KPICard({ title, value, subtitle, icon: CardIcon, trend }: KPICardProps
 
 // ─── Holdings Table ─────────────────────────────────────────────────
 
+function isMarketAsset(assetType: string): boolean {
+  return MARKET_ASSET_TYPES.includes(assetType as AssetType);
+}
+
 function HoldingsTable({ holdings }: { holdings: AccountHoldingRow[] }) {
   if (holdings.length === 0) {
     return (
@@ -97,6 +103,9 @@ function HoldingsTable({ holdings }: { holdings: AccountHoldingRow[] }) {
               <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                 Gain/Loss
               </th>
+              <th className="w-10 px-2 py-3">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -117,10 +126,13 @@ function HoldingsTable({ holdings }: { holdings: AccountHoldingRow[] }) {
               return (
                 <tr
                   key={h.id}
-                  className="transition-colors hover:bg-muted/30"
+                  className="group transition-colors hover:bg-muted/30"
                 >
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    <Link
+                      href={`/holdings/${h.id}`}
+                      className="flex items-center gap-2 hover:underline"
+                    >
                       <div>
                         <p className="font-medium text-foreground">
                           {h.ticker ? (
@@ -131,7 +143,7 @@ function HoldingsTable({ holdings }: { holdings: AccountHoldingRow[] }) {
                           {h.name}
                         </p>
                       </div>
-                    </div>
+                    </Link>
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -157,6 +169,16 @@ function HoldingsTable({ holdings }: { holdings: AccountHoldingRow[] }) {
                         ({formatPercent(h.gainLossPercent, { showSign: true })})
                       </span>
                     </div>
+                  </td>
+                  <td className="px-2 py-3">
+                    <HoldingRowActions
+                      holdingId={h.id}
+                      holdingName={h.name}
+                      assetType={h.assetType}
+                      ticker={h.ticker}
+                      sector={h.sector}
+                      notes={h.notes}
+                    />
                   </td>
                 </tr>
               );

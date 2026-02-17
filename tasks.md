@@ -93,6 +93,70 @@
 - [x] **1H.7** Build Cross-Custodian Grouped view: toggle between "by account" and "grouped by ticker" views with weighted avg cost basis
 - [x] **1H.8** Build CSV Import: upload dialog, column mapping preview, validation, bulk insert
 
+## Phase 1H.a: Market Price Refresh Pipeline
+
+> **Goal:** Automatically fetch and cache market prices for all tracked tickers so that dashboard values, gain/loss calculations, and analytics always reflect current (or near-current) market data. Start with delayed/periodic refresh and lay the groundwork for increasing frequency later.
+
+### Provider: Finnhub (free tier)
+- **API:** `https://finnhub.io/api/v1/quote?symbol=AAPL&token=KEY`
+- **Free tier:** 60 calls/minute (shared across all endpoints)
+- **Coverage:** US stocks, ETFs, mutual funds, crypto (via exchange-prefixed symbols like `BINANCE:BTCUSDT`), some international
+- **Response:** `{ c: current, d: change, dp: changePercent, h: high, l: low, o: open, pc: previousClose, t: timestamp }`
+- **Env var:** `FINNHUB_API_KEY` (already in `.env.example`)
+
+### Refresh Strategy
+| Window | Schedule | Rationale |
+|---|---|---|
+| US Market hours (Mon–Fri 9:30 AM – 4:00 PM ET) | Every 15 min | Active trading, prices change frequently |
+| Extended hours (Mon–Fri 4:00 PM – 8:00 PM ET) | Every 30 min | Lower volume, less urgency |
+| Off-hours / Weekends (stocks) | Every 4 hours | Prices don't change, but crypto does |
+| Crypto (24/7) | Every 15 min always | Crypto trades around the clock |
+
+> **Phase 2 upgrade path:** Switch to Finnhub WebSocket for true real-time streaming on paid tier, or add Polygon.io as a second provider for redundancy.
+
+### Tasks
+
+- [x] **1H.a.1** Create market data service (`src/server/services/market-data.ts`)
+  - `fetchQuote(ticker: string)` — calls Finnhub `/quote`, returns normalized `{ priceCents, previousCloseCents, changeCents, changePercent, volume }`
+  - `fetchCryptoQuote(ticker: string)` — handles crypto symbol mapping (e.g., `BTC` → `BINANCE:BTCUSDT`)
+  - `fetchBatchQuotes(tickers: string[])` — iterates with 50ms delay between calls to stay under 60/min rate limit
+  - Handles API errors gracefully: returns `null` for failed tickers, logs warnings, never throws
+  - Includes crypto symbol mapping table (`CRYPTO_SYMBOL_MAP`)
+
+- [x] **1H.a.2** Create DAL function to collect all tracked tickers (`src/server/dal/holdings.ts`)
+  - `getAllTrackedTickers()` — `SELECT DISTINCT ticker FROM holdings WHERE ticker IS NOT NULL AND deleted_at IS NULL`
+  - No auth required (called from cron context, not user context)
+  - Returns `{ ticker: string; assetType: string }[]` so the service knows which are crypto vs stock
+
+- [x] **1H.a.3** Create cron API route (`src/app/api/cron/refresh-prices/route.ts`)
+  - `GET` handler secured by `CRON_SECRET` header (matches `vercel.json` cron config)
+  - Calls `getAllTrackedTickers()` → groups by asset type → calls `fetchBatchQuotes()`
+  - Upserts results via `batchUpdatePriceCache()`
+  - Returns JSON summary: `{ refreshed: number, failed: string[], durationMs: number }`
+  - Logs results for monitoring
+
+- [x] **1H.a.4** Add Vercel cron configuration (`vercel.json`)
+  - Schedule: `*/15 * * * *` (every 15 minutes) as a starting point
+  - Path: `/api/cron/refresh-prices`
+  - Header: `Authorization: Bearer ${CRON_SECRET}`
+  - Add `CRON_SECRET` to `.env.example` (already present) and `.env.local`
+
+- [x] **1H.a.5** Create a dev-friendly manual refresh script and Server Action
+  - npm script `"prices:refresh"` in `package.json` — runs a standalone script that calls the same service
+  - Server Action `refreshPrices()` in `src/server/actions/prices.ts` — rate-limited (max 1 call per 5 min per user), calls the service for that user's tickers only
+  - Returns `{ refreshed: number, failed: string[], lastUpdated: Date }`
+
+- [x] **1H.a.6** Add "Last Updated" indicator and manual refresh button to the UI
+  - Show "Prices as of X minutes ago" badge on Dashboard KPI section and Holdings table header
+  - Add a refresh icon button next to it — calls `refreshPrices()` Server Action
+  - Disable button + show spinner while refreshing, show cooldown timer if rate-limited
+  - After refresh, `revalidatePath` to reflect new prices everywhere
+
+- [x] **1H.a.7** Update `.env.example` and `docs/architecture.md`
+  - Add any new env vars
+  - Update architecture diagram to show the cron → Finnhub → price_cache flow
+  - Document the refresh strategy and rate limit considerations
+
 ## Phase 1I: Analytics UI
 
 - [ ] **1I.1** Build Analytics page: portfolio value over time chart with deposit/withdrawal toggle

@@ -11,15 +11,17 @@ import {
 } from "@/server/validators/holdings";
 import {
   addLotSchema,
+  updateLotSchema,
   liquidateLotSchema,
   type AddLotInput,
+  type UpdateLotInput,
 } from "@/server/validators/lots";
 import {
   createHolding as createHoldingInDB,
   updateHolding as updateHoldingInDB,
   findHoldingByTickerInAccount,
 } from "@/server/dal/holdings";
-import { addLot, liquidateLot } from "@/server/dal/lots";
+import { addLot, updateLot as updateLotInDB, liquidateLot, deleteLot } from "@/server/dal/lots";
 import { findOrCreateAccountByName } from "@/server/dal/accounts";
 import { getPortfolios, createPortfolio } from "@/server/dal/portfolios";
 
@@ -137,6 +139,58 @@ export async function addLotToHolding(input: AddLotInput) {
   revalidatePath(`/holdings/${validated.holdingId}`);
   revalidatePath("/dashboard");
   return { success: true as const, lotId: lot.id };
+}
+
+/**
+ * Update an existing lot's position data (shares, cost basis, date, etc.).
+ */
+export async function updateLotAction(
+  lotId: string,
+  holdingId: string,
+  input: UpdateLotInput,
+) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const validated = updateLotSchema.parse(input);
+
+  const lot = await updateLotInDB(lotId, {
+    ...validated,
+    acquiredAt: validated.acquiredAt ? new Date(validated.acquiredAt) : validated.acquiredAt === null ? null : undefined,
+  });
+
+  revalidatePath("/holdings");
+  revalidatePath(`/holdings/${holdingId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/accounts");
+  return { success: true as const, lotId: lot.id };
+}
+
+/**
+ * Delete a lot from a holding.
+ *
+ * If this was the last lot, the parent holding is also soft-deleted.
+ * Returns holdingDeleted so the client can redirect to the holdings list.
+ */
+export async function deleteLotAction(lotId: string, holdingId: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const idSchema = z.string().uuid();
+  idSchema.parse(lotId);
+  idSchema.parse(holdingId);
+
+  const result = await deleteLot(lotId);
+
+  revalidatePath("/holdings");
+  revalidatePath(`/holdings/${holdingId}`);
+  revalidatePath("/accounts");
+  revalidatePath("/dashboard");
+
+  return {
+    success: true as const,
+    holdingDeleted: result.holdingDeleted,
+  };
 }
 
 /**

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Pencil, Loader2 } from "lucide-react";
+import { Pencil, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -25,11 +26,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SECTORS } from "@/lib/constants";
+import {
+  ASSET_TYPES,
+  MARKET_ASSET_TYPES,
+  SECTORS,
+  type AssetType,
+} from "@/lib/constants";
 import { updateHolding } from "@/server/actions/holdings";
+import {
+  setManualPriceAction,
+  clearManualOverrideAction,
+} from "@/server/actions/prices";
 
 // ─── Form Schema ────────────────────────────────────────────────────
 
+const assetTypeKeys = Object.keys(ASSET_TYPES) as [string, ...string[]];
 const sectorKeys = Object.keys(SECTORS) as [string, ...string[]];
 
 const editHoldingFormSchema = z.object({
@@ -37,6 +48,7 @@ const editHoldingFormSchema = z.object({
     .string()
     .min(1, "Holding name is required")
     .max(200, "Holding name must be 200 characters or fewer"),
+  assetType: z.enum(assetTypeKeys),
   ticker: z
     .string()
     .max(10, "Ticker must be 10 characters or fewer")
@@ -55,10 +67,29 @@ const editHoldingFormSchema = z.object({
 
 type EditHoldingFormValues = z.input<typeof editHoldingFormSchema>;
 
+const assetTypeEntries = Object.entries(ASSET_TYPES).map(([key, label]) => ({
+  value: key,
+  label,
+}));
+
 const sectorEntries = Object.entries(SECTORS).map(([key, label]) => ({
   value: key,
   label,
 }));
+
+function isMarketType(type: string): boolean {
+  return MARKET_ASSET_TYPES.includes(type as AssetType);
+}
+
+/** Get the displayable dollar string from priceInfo, preferring priceDollars for precision. */
+function getPriceDisplay(priceInfo: { priceDollars: number | null; priceCents: number } | null | undefined): string {
+  if (!priceInfo) return "";
+  const dollars = priceInfo.priceDollars ?? priceInfo.priceCents / 100;
+  if (dollars === 0) return "";
+  // For very small prices (sub-cent), show up to 8 decimal places
+  if (dollars < 0.01) return dollars.toPrecision(4);
+  return dollars.toFixed(2);
+}
 
 // ─── Component ──────────────────────────────────────────────────────
 
@@ -66,21 +97,54 @@ interface EditHoldingDialogProps {
   holdingId: string;
   currentValues: {
     name: string;
+    assetType: string;
     ticker?: string | null;
     sector?: string | null;
     notes?: string | null;
   };
-  isMarketAsset: boolean;
+  /** Current price info from price_cache (if any). */
+  priceInfo?: {
+    priceCents: number;
+    priceDollars: number | null;
+    isManualOverride: boolean;
+  } | null;
+  /** When provided, the dialog open state is controlled externally (no built-in trigger). */
+  externalOpen?: boolean;
+  /** Callback for external open state changes. */
+  onExternalOpenChange?: (open: boolean) => void;
 }
 
 export function EditHoldingDialog({
   holdingId,
   currentValues,
-  isMarketAsset,
+  priceInfo,
+  externalOpen,
+  onExternalOpenChange,
 }: EditHoldingDialogProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = externalOpen !== undefined;
+  const isOpen = isControlled ? externalOpen : internalOpen;
+  const setIsOpen = isControlled
+    ? (open: boolean) => onExternalOpenChange?.(open)
+    : setInternalOpen;
   const [isPending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
+
+  // Manual price override state
+  const [isManualPriceEnabled, setIsManualPriceEnabled] = useState(
+    priceInfo?.isManualOverride ?? false,
+  );
+  const [manualPrice, setManualPrice] = useState(
+    priceInfo?.isManualOverride ? getPriceDisplay(priceInfo) : "",
+  );
+
+  // Sync manual override state when priceInfo prop changes (dialog re-opens)
+  useEffect(() => {
+    setIsManualPriceEnabled(priceInfo?.isManualOverride ?? false);
+    setManualPrice(
+      priceInfo?.isManualOverride ? getPriceDisplay(priceInfo) : "",
+    );
+  }, [priceInfo]);
 
   const {
     register,
@@ -93,6 +157,7 @@ export function EditHoldingDialog({
     resolver: zodResolver(editHoldingFormSchema),
     defaultValues: {
       name: currentValues.name,
+      assetType: currentValues.assetType,
       ticker: currentValues.ticker ?? "",
       sector: (currentValues.sector ?? undefined) as EditHoldingFormValues["sector"],
       notes: currentValues.notes ?? "",
@@ -100,17 +165,49 @@ export function EditHoldingDialog({
   });
 
   const selectedSector = watch("sector");
+  const selectedAssetType = watch("assetType");
+  const showTicker = isMarketType(selectedAssetType);
+
+  // Track whether manual price state has changed from the initial prop values
+  const initialOverride = priceInfo?.isManualOverride ?? false;
+  const initialPrice =
+    priceInfo?.isManualOverride ? getPriceDisplay(priceInfo) : "";
+  const hasPriceChanges =
+    isManualPriceEnabled !== initialOverride ||
+    (isManualPriceEnabled && manualPrice !== initialPrice);
 
   function onSubmit(data: EditHoldingFormValues) {
     setServerError(null);
     startTransition(async () => {
       try {
+        const isMarket = isMarketType(data.assetType);
+        const ticker = isMarket ? (data.ticker || null) : null;
+
         const result = await updateHolding(holdingId, {
           name: data.name,
-          ticker: data.ticker || null,
+          assetType: data.assetType,
+          ticker,
           sector: data.sector || null,
           notes: data.notes || null,
         });
+
+        // Handle manual price override
+        if (isMarket && ticker) {
+          if (isManualPriceEnabled && manualPrice) {
+            const priceDollars = parseFloat(manualPrice);
+            if (priceDollars > 0) {
+              const priceResult = await setManualPriceAction(ticker, priceDollars);
+              if (!priceResult.success) {
+                setServerError(priceResult.error ?? "Failed to set manual price");
+                return;
+              }
+            }
+          } else if (!isManualPriceEnabled && priceInfo?.isManualOverride) {
+            // User unchecked the override — clear it
+            await clearManualOverrideAction(ticker);
+          }
+        }
+
         if (result.success) {
           setIsOpen(false);
         }
@@ -127,22 +224,29 @@ export function EditHoldingDialog({
     if (!open) {
       reset({
         name: currentValues.name,
+        assetType: currentValues.assetType,
         ticker: currentValues.ticker ?? "",
         sector: (currentValues.sector ?? undefined) as EditHoldingFormValues["sector"],
         notes: currentValues.notes ?? "",
       });
+      setIsManualPriceEnabled(priceInfo?.isManualOverride ?? false);
+      setManualPrice(
+        priceInfo?.isManualOverride ? getPriceDisplay(priceInfo) : "",
+      );
       setServerError(null);
     }
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Pencil className="h-4 w-4" />
-          Edit
-        </Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+        </DialogTrigger>
+      )}
 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -167,8 +271,38 @@ export function EditHoldingDialog({
             )}
           </div>
 
+          {/* Asset Type */}
+          <div className="grid gap-2">
+            <Label>Asset Type</Label>
+            <Select
+              value={selectedAssetType}
+              onValueChange={(val) =>
+                setValue("assetType", val, {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select type..." />
+              </SelectTrigger>
+              <SelectContent>
+                {assetTypeEntries.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedAssetType === "cash" && (
+              <p className="text-xs text-muted-foreground">
+                Cash holdings track total amount only — no market price needed.
+              </p>
+            )}
+          </div>
+
           {/* Ticker (market assets only) */}
-          {isMarketAsset && (
+          {showTicker && (
             <div className="grid gap-2">
               <Label htmlFor="edit-holding-ticker">Ticker Symbol</Label>
               <Input
@@ -181,6 +315,59 @@ export function EditHoldingDialog({
               {errors.ticker && (
                 <p className="text-xs text-destructive">
                   {errors.ticker.message}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Manual Price Override (market assets with a ticker) */}
+          {showTicker && (
+            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="manual-price-override"
+                  checked={isManualPriceEnabled}
+                  onCheckedChange={(checked) => {
+                    setIsManualPriceEnabled(checked === true);
+                    if (!checked) setManualPrice("");
+                  }}
+                />
+                <Label
+                  htmlFor="manual-price-override"
+                  className="text-sm font-medium cursor-pointer"
+                >
+                  Set Price Manually
+                </Label>
+              </div>
+
+              {isManualPriceEnabled && (
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-price-input" className="text-xs text-muted-foreground">
+                      Price Per Unit ($)
+                    </Label>
+                    <Input
+                      id="manual-price-input"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="e.g. 0.00002847"
+                      value={manualPrice}
+                      onChange={(e) => setManualPrice(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span>
+                      This price won&apos;t be updated by automatic refreshes.
+                      Uncheck to resume auto-pricing.
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {!isManualPriceEnabled && priceInfo?.isManualOverride && (
+                <p className="text-xs text-muted-foreground">
+                  Unchecking will resume automatic price updates for this ticker.
                 </p>
               )}
             </div>
@@ -250,7 +437,7 @@ export function EditHoldingDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending || !isDirty}>
+            <Button type="submit" disabled={isPending || (!isDirty && !hasPriceChanges)}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Save Changes
             </Button>

@@ -22,9 +22,9 @@
 ┌──────────────▼────────┐  ┌──────────▼───────────────────┐
 │   SUPABASE (PostgreSQL)│  │      EXTERNAL SERVICES        │
 │   - RLS enforced       │  │  Clerk (auth, MFA, roles)     │
-│   - All tables         │  │  Finnhub/Twelve Data (prices) │
+│   - All tables         │  │  Finnhub (stock + crypto)     │
 │   - audit_logs         │  │  Upstash Redis (rate limits)  │
-│   - price_cache        │  │  Vercel Cron (scheduled jobs) │
+│   - price_cache  ◄─────│──│  Vercel Cron (*/15 * * * *)   │
 │   - news_cache         │  │                               │
 └────────────────────────┘  └───────────────────────────────┘
 ```
@@ -48,12 +48,44 @@ Pages fetch data server-side via the DAL. No loading spinners for initial page l
 ### 3. Money as Integer Cents
 All monetary values are stored as integers representing cents (BIGINT in PostgreSQL, number in TypeScript). This prevents floating-point rounding errors that compound across calculations. The conversion to display format ("$1,234.56") happens exclusively in the `formatCurrency()` utility in the UI layer.
 
-### 4. Background Price Caching
-Market prices are NEVER fetched in real-time during user requests. A background cron job:
-1. Runs every 15 minutes during US market hours (9:30 AM – 4:00 PM ET, weekdays)
-2. Fetches prices for all unique tickers across all users' holdings
-3. Updates the `price_cache` table
-4. Dashboard reads from `price_cache` only
+### 4. Background Price Caching (Phase 1H.a)
+Market prices are NEVER fetched in real-time during user page loads. Instead:
+
+**Providers:**
+- **Finnhub** (free tier — 60 API calls/minute): Stocks, ETFs, Crypto
+  - Stocks / ETFs → `GET /quote?symbol=AAPL`
+  - Crypto → `GET /crypto/candle?symbol=BINANCE:BTCUSDT&resolution=D`
+- **Yahoo Finance** (no API key, fallback): Mutual Funds, Bonds, anything Finnhub misses
+  - `GET /v8/finance/chart/FXAIX?range=2d&interval=1d`
+  - Used as primary for mutual_fund/bond; as fallback for stocks/ETFs that return 0 from Finnhub
+
+**Cron Pipeline:**
+```
+Vercel Cron (*/15 * * * *)
+  → GET /api/cron/refresh-prices (secured by CRON_SECRET)
+    → DAL: getAllTrackedTickers()  (DISTINCT tickers from holdings)
+    → Service: fetchBatchQuotes()  (paced at 50ms/call, pauses every 55)
+    → DAL: batchUpdatePriceCache() (upsert into price_cache)
+```
+
+**Manual Refresh:**
+- Users can click a "Refresh" button (rate-limited: 1x per 5 min per user)
+- Server Action `refreshPrices()` fetches only that user's tickers
+- After refresh, `revalidatePath()` updates Dashboard, Holdings, Accounts
+
+**Staleness Indicator:**
+- Dashboard and Holdings pages show "Prices updated X min ago"
+- Color-coded: green (<20 min), yellow (20-60 min), orange (>60 min)
+
+**Rate Limit Safety:**
+- 50ms delay between individual API calls
+- 5s pause every 55 calls (to never exceed 60/min window)
+- Failed tickers logged but never block other refreshes
+
+**Upgrade Path (Phase 2):**
+- Finnhub WebSocket for true real-time streaming (paid tier)
+- Polygon.io as a redundant secondary provider
+- Upstash Redis for distributed rate limiting across instances
 
 This prevents: API rate limit exhaustion, slow page loads, external API outages affecting user experience, and unnecessary costs.
 
@@ -95,6 +127,37 @@ By using React for the web frontend:
    d. Sum all market_values + manual asset values = total net worth
 3. Server renders KPI cards and chart with computed data
 4. Client hydrates interactive elements (period selector, tooltips)
+```
+
+### Price Refresh (Cron)
+```
+1. Vercel Cron triggers GET /api/cron/refresh-prices every 15 min
+2. Route handler verifies CRON_SECRET from Authorization header
+3. getAllTrackedTickers() → SELECT DISTINCT ticker, asset_type
+   FROM holdings WHERE ticker IS NOT NULL AND deleted_at IS NULL
+4. Tickers grouped: stocks vs crypto
+5. fetchBatchQuotes() iterates all tickers:
+   a. Mutual funds / bonds → Yahoo Finance (Finnhub returns 0 for these)
+   b. Stocks / ETFs → Finnhub /quote → Yahoo Finance fallback if 0
+   c. Crypto → Finnhub /crypto/candle (resolution=D) → last close
+   d. 50ms delay between calls, 5s pause every 55 calls
+   e. Failed tickers → null (logged, not thrown)
+6. batchUpdatePriceCache() → UPSERT into price_cache for each quote
+7. Response: { refreshed: 42, failed: ["BADTKR"], durationMs: 3200 }
+```
+
+### Price Refresh (Manual / User-Triggered)
+```
+1. User clicks "Refresh" button on Dashboard or Holdings page
+2. Client Component calls Server Action: refreshPrices()
+3. Server Action:
+   a. auth() → verify Clerk session
+   b. In-memory rate limit check (5 min cooldown per user)
+   c. getUserTrackedTickers(userId) → only that user's tickers
+   d. fetchBatchQuotes() → Finnhub API calls
+   e. batchUpdatePriceCache() → upsert results
+   f. revalidatePath("/dashboard", "/holdings", "/accounts")
+4. Client receives result → shows "42 updated" or cooldown timer
 ```
 
 ### Cross-Custodian Grouping

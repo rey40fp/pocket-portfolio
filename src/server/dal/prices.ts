@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { priceCache } from "@/db/schema/price-cache";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, desc } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -8,6 +8,8 @@ import { auth } from "@clerk/nextjs/server";
 interface UpdatePriceCacheInput {
   ticker: string;
   priceCents: number;
+  /** Raw dollar price for full precision (supports sub-cent meme coins). */
+  priceDollars?: number | null;
   previousCloseCents?: number | null;
   changeCents?: number | null;
   changePercent?: string | null;
@@ -15,6 +17,13 @@ interface UpdatePriceCacheInput {
   marketCapCents?: number | null;
   name?: string | null;
   sector?: string | null;
+}
+
+interface SetManualPriceInput {
+  ticker: string;
+  priceCents: number;
+  /** Raw dollar price for full precision. */
+  priceDollars: number;
 }
 
 // ─── DAL Functions ───────────────────────────────────────────────────
@@ -60,8 +69,62 @@ export async function batchGetPrices(tickers: string[]) {
  * market data API. This function does NOT require an active user
  * session — it is designed to run in a server-side cron context
  * where auth is handled at the API route level.
+ *
+ * IMPORTANT: This does NOT set isManualOverride — it always writes
+ * false. Use `setManualPrice` for user-set price overrides.
  */
 export async function updatePriceCache(input: UpdatePriceCacheInput) {
+  const now = new Date();
+  const ticker = input.ticker.toUpperCase();
+
+  const priceDollars = input.priceDollars ?? input.priceCents / 100;
+
+  const [price] = await db
+    .insert(priceCache)
+    .values({
+      ticker,
+      priceCents: input.priceCents,
+      priceDollars,
+      previousCloseCents: input.previousCloseCents ?? null,
+      changeCents: input.changeCents ?? null,
+      changePercent: input.changePercent ?? null,
+      volume: input.volume ?? null,
+      marketCapCents: input.marketCapCents ?? null,
+      name: input.name ?? null,
+      sector: input.sector ?? null,
+      isManualOverride: false,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: priceCache.ticker,
+      set: {
+        priceCents: input.priceCents,
+        priceDollars,
+        previousCloseCents: input.previousCloseCents ?? null,
+        changeCents: input.changeCents ?? null,
+        changePercent: input.changePercent ?? null,
+        volume: input.volume ?? null,
+        marketCapCents: input.marketCapCents ?? null,
+        name: input.name ?? null,
+        sector: input.sector ?? null,
+        isManualOverride: false,
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  return price;
+}
+
+/**
+ * Set a manual price override for a ticker.
+ * This price will NOT be overwritten by the automated refresh pipeline.
+ * Requires authentication.
+ */
+export async function setManualPrice(input: SetManualPriceInput) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
   const now = new Date();
   const ticker = input.ticker.toUpperCase();
 
@@ -70,32 +133,68 @@ export async function updatePriceCache(input: UpdatePriceCacheInput) {
     .values({
       ticker,
       priceCents: input.priceCents,
-      previousCloseCents: input.previousCloseCents ?? null,
-      changeCents: input.changeCents ?? null,
-      changePercent: input.changePercent ?? null,
-      volume: input.volume ?? null,
-      marketCapCents: input.marketCapCents ?? null,
-      name: input.name ?? null,
-      sector: input.sector ?? null,
+      priceDollars: input.priceDollars,
+      isManualOverride: true,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: priceCache.ticker,
       set: {
         priceCents: input.priceCents,
-        previousCloseCents: input.previousCloseCents ?? null,
-        changeCents: input.changeCents ?? null,
-        changePercent: input.changePercent ?? null,
-        volume: input.volume ?? null,
-        marketCapCents: input.marketCapCents ?? null,
-        name: input.name ?? null,
-        sector: input.sector ?? null,
+        priceDollars: input.priceDollars,
+        isManualOverride: true,
         updatedAt: now,
       },
     })
     .returning();
 
   return price;
+}
+
+/**
+ * Remove the manual override for a ticker, allowing the refresh
+ * pipeline to update its price automatically again.
+ * Requires authentication.
+ */
+export async function clearManualOverride(ticker: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  await db
+    .update(priceCache)
+    .set({ isManualOverride: false })
+    .where(eq(priceCache.ticker, ticker.toUpperCase()));
+}
+
+/**
+ * Get tickers that have a manual price override.
+ * Used by the refresh pipeline to skip them.
+ */
+export async function getManualOverrideTickers(): Promise<Set<string>> {
+  const rows = await db
+    .select({ ticker: priceCache.ticker })
+    .from(priceCache)
+    .where(eq(priceCache.isManualOverride, true));
+
+  return new Set(rows.map((r) => r.ticker));
+}
+
+/**
+ * Get the most recent updatedAt timestamp from the price cache.
+ * Used to display "Prices as of X minutes ago" in the UI.
+ * Requires authentication.
+ */
+export async function getLatestPriceUpdate(): Promise<Date | null> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const [row] = await db
+    .select({ updatedAt: priceCache.updatedAt })
+    .from(priceCache)
+    .orderBy(desc(priceCache.updatedAt))
+    .limit(1);
+
+  return row?.updatedAt ?? null;
 }
 
 /**

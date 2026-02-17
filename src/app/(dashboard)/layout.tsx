@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Menu } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { Sidebar } from "@/components/layout/sidebar";
-import { HouseholdSelector } from "@/components/layout/household-selector";
 
 export default function DashboardLayout({
   children,
@@ -32,8 +31,7 @@ export default function DashboardLayout({
               <Menu className="h-5 w-5" />
             </button>
 
-            {/* Household selector */}
-            <HouseholdSelector />
+            {/* Household selector — wired up in Phase 1K */}
           </div>
 
           <div className="flex items-center gap-4">

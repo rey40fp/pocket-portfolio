@@ -153,6 +153,104 @@ export async function updateLot(lotId: string, input: UpdateLotInput) {
   return updated;
 }
 
+// ─── Delete Lot ──────────────────────────────────────────────────────
+
+interface DeleteLotResult {
+  deletedLotId: string;
+  holdingDeleted: boolean;
+  holdingId: string;
+}
+
+/**
+ * Hard-delete a lot. If this was the last remaining lot for the parent
+ * holding, soft-delete the holding as well.
+ *
+ * Returns whether the holding was also deleted so the caller can
+ * redirect the user appropriately.
+ */
+export async function deleteLot(lotId: string): Promise<DeleteLotResult> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  // 1. Fetch the lot (verify ownership)
+  const [lot] = await db
+    .select()
+    .from(lots)
+    .where(and(eq(lots.id, lotId), eq(lots.userId, userId)));
+
+  if (!lot) throw new Error("NOT_FOUND");
+
+  const holdingId = lot.holdingId;
+
+  // 2. Delete the lot
+  await db
+    .delete(lots)
+    .where(and(eq(lots.id, lotId), eq(lots.userId, userId)));
+
+  await logAuditEvent({
+    actorId: userId,
+    action: "DELETE",
+    resourceType: "lot",
+    resourceId: lotId,
+    metadata: {
+      holdingId,
+      shares: lot.shares,
+      costBasisCents: lot.costBasisCents,
+    },
+  });
+
+  // 3. Check if the holding still has remaining lots
+  const remainingLots = await db
+    .select()
+    .from(lots)
+    .where(eq(lots.holdingId, holdingId));
+
+  let holdingDeleted = false;
+
+  if (remainingLots.length === 0) {
+    // Soft-delete the holding
+    const now = new Date();
+    await db
+      .update(holdings)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(holdings.id, holdingId),
+          eq(holdings.userId, userId),
+          isNull(holdings.deletedAt),
+        ),
+      );
+
+    await logAuditEvent({
+      actorId: userId,
+      action: "DELETE",
+      resourceType: "holding",
+      resourceId: holdingId,
+      metadata: { reason: "all_lots_deleted" },
+    });
+
+    holdingDeleted = true;
+  }
+
+  return { deletedLotId: lotId, holdingDeleted, holdingId };
+}
+
+/**
+ * Count the non-liquidated lots for a given holding.
+ * Used by the UI to decide whether to show the "last lot" warning.
+ */
+export async function countLotsForHolding(holdingId: string): Promise<number> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const result = await db
+    .select()
+    .from(lots)
+    .where(and(eq(lots.holdingId, holdingId), eq(lots.userId, userId)));
+
+  return result.length;
+}
+
 // ─── Liquidation ────────────────────────────────────────────────────
 
 interface LiquidateLotInput {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Wallet, PlusCircle, FileSpreadsheet, Download, Upload } from "lucide-react";
 import { getDashboardKPIs, getNetWorthHistory, getAssetAllocation, getTopMovers, getRecentActivity } from "@/server/dal/dashboard";
+import { getLatestPriceUpdate } from "@/server/dal/prices";
 import { ensureUserSynced } from "@/server/dal/users";
 import { DashboardKPICards } from "@/components/dashboard/kpi-cards";
 import { NetWorthChart } from "@/components/dashboard/net-worth-chart";
@@ -8,16 +9,18 @@ import { AssetAllocationChart } from "@/components/dashboard/asset-allocation-ch
 import { TopMovers } from "@/components/dashboard/top-movers";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { CsvImportDialog } from "@/components/forms/csv-import-dialog";
+import { PriceRefreshIndicator } from "@/components/shared/price-refresh-indicator";
 
 export default async function DashboardPage() {
   // Ensure the Clerk user exists in the DB before any queries
   await ensureUserSynced();
 
-  const [kpis, allocation, topMovers, recentActivity] = await Promise.all([
+  const [kpis, allocation, topMovers, recentActivity, latestPriceUpdate] = await Promise.all([
     getDashboardKPIs(),
     getAssetAllocation(),
     getTopMovers(),
     getRecentActivity(),
+    getLatestPriceUpdate(),
   ]);
 
   const isEmpty =
@@ -121,12 +124,19 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-        Dashboard
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Your portfolio at a glance.
-      </p>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your portfolio at a glance.
+          </p>
+        </div>
+        <PriceRefreshIndicator
+          lastUpdated={latestPriceUpdate?.toISOString() ?? null}
+        />
+      </div>
 
       {/* KPI Cards */}
       <section className="mt-6" aria-label="Key portfolio metrics">

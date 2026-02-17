@@ -18,7 +18,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:setup": "tsx src/db/setup.ts",
-    "seed": "tsx src/db/seed.ts"
+    "seed": "tsx src/db/seed.ts",
+    "prices:refresh": "tsx src/scripts/refresh-prices.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.37.4",

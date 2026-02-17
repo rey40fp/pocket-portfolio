@@ -149,7 +149,12 @@ export async function getAccountsWithSummary(): Promise<AccountSummary[]> {
 
     if (isMarketAsset(holding.assetType) && holding.ticker) {
       const price = priceMap.get(holding.ticker.toUpperCase());
-      lotValue = price ? Math.round(shares * price.priceCents) : costBasis;
+      if (price) {
+        const dollars = price.priceDollars ?? price.priceCents / 100;
+        lotValue = Math.round(shares * dollars * 100);
+      } else {
+        lotValue = costBasis;
+      }
     } else {
       lotValue = lot.currentValueCents ?? costBasis;
     }
@@ -396,6 +401,8 @@ export interface AccountHoldingRow {
   name: string;
   assetType: string;
   assetTypeLabel: string;
+  sector: string | null;
+  notes: string | null;
   shares: number;
   costBasisCents: number;
   currentValueCents: number;
@@ -509,7 +516,12 @@ export async function getAccountDetailData(
 
     if (isMarketAsset(holding.assetType) && holding.ticker) {
       const price = priceMap.get(holding.ticker.toUpperCase());
-      currentValue = price ? Math.round(shares * price.priceCents) : costBasis;
+      if (price) {
+        const dollars = price.priceDollars ?? price.priceCents / 100;
+        currentValue = Math.round(shares * dollars * 100);
+      } else {
+        currentValue = costBasis;
+      }
     } else {
       currentValue = lot.currentValueCents ?? costBasis;
     }
@@ -544,6 +556,8 @@ export async function getAccountDetailData(
       name: h.name,
       assetType: h.assetType,
       assetTypeLabel: ASSET_TYPES[h.assetType as AssetType] ?? h.assetType,
+      sector: h.sector,
+      notes: h.notes,
       shares: agg.totalShares,
       costBasisCents: agg.totalCostBasis,
       currentValueCents: agg.totalCurrentValue,

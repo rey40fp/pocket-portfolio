@@ -144,11 +144,14 @@ export async function getDashboardKPIs(): Promise<DashboardKPIs> {
     if (isMarketAsset(holding.assetType) && holding.ticker) {
       const price = priceMap.get(holding.ticker.toUpperCase());
       if (price) {
-        const currentValue = Math.round(shares * price.priceCents);
+        const dollars = price.priceDollars ?? price.priceCents / 100;
+        const currentValue = Math.round(shares * dollars * 100);
         netWorthCents += currentValue;
 
-        const prevClose = price.previousCloseCents ?? price.priceCents;
-        previousCloseTotalCents += Math.round(shares * prevClose);
+        const prevCloseDollars = price.previousCloseCents
+          ? price.previousCloseCents / 100
+          : dollars;
+        previousCloseTotalCents += Math.round(shares * prevCloseDollars * 100);
       } else {
         // No cached price — fall back to cost basis as estimated value
         netWorthCents += costBasis;
@@ -253,7 +256,12 @@ export async function getAssetAllocation(): Promise<AssetAllocationSlice[]> {
 
     if (isMarketAsset(assetType) && holding.ticker) {
       const price = priceMap.get(holding.ticker.toUpperCase());
-      lotValue = price ? Math.round(shares * price.priceCents) : costBasis;
+      if (price) {
+        const dollars = price.priceDollars ?? price.priceCents / 100;
+        lotValue = Math.round(shares * dollars * 100);
+      } else {
+        lotValue = costBasis;
+      }
     } else {
       lotValue = lot.currentValueCents ?? costBasis;
     }

@@ -17,11 +17,13 @@ import {
 } from "lucide-react";
 import { getHoldingDetailData } from "@/server/dal/holdings";
 import type { LotRow } from "@/server/dal/holdings";
+import { getCachedPrice } from "@/server/dal/prices";
 import { formatCurrency, formatPercent, formatShares, cn } from "@/lib/utils";
-import { ASSET_TYPES, SECTORS, type AssetType } from "@/lib/constants";
+import { ASSET_TYPES, MARKET_ASSET_TYPES, SECTORS, type AssetType } from "@/lib/constants";
 import { PriceChart } from "@/components/dashboard/price-chart";
 import { EditHoldingDialog } from "@/components/forms/edit-holding-dialog";
 import { LiquidatePositionDialog } from "@/components/forms/liquidate-position-dialog";
+import { LotRowActions } from "@/components/shared/lot-row-actions";
 import { Badge } from "@/components/ui/badge";
 
 // ─── KPI Card ──────────────────────────────────────────────────────
@@ -165,9 +167,11 @@ interface LotTableProps {
   lots: LotRow[];
   isMarket: boolean;
   assetType: string;
+  holdingId: string;
+  holdingName: string;
 }
 
-function LotBreakdownTable({ lots, isMarket, assetType }: LotTableProps) {
+function LotBreakdownTable({ lots, isMarket, assetType, holdingId, holdingName }: LotTableProps) {
   if (lots.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-8 text-center shadow-sm">
@@ -228,6 +232,9 @@ function LotBreakdownTable({ lots, isMarket, assetType }: LotTableProps) {
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                 Status
               </th>
+              <th className="w-10 px-2 py-3">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -253,7 +260,7 @@ function LotBreakdownTable({ lots, isMarket, assetType }: LotTableProps) {
                 <tr
                   key={lot.id}
                   className={cn(
-                    "transition-colors hover:bg-muted/30",
+                    "group transition-colors hover:bg-muted/30",
                     lot.isLiquidated && "opacity-50",
                   )}
                 >
@@ -321,6 +328,32 @@ function LotBreakdownTable({ lots, isMarket, assetType }: LotTableProps) {
                       </Badge>
                     )}
                   </td>
+                  <td className="px-2 py-3">
+                    {!lot.isLiquidated && (
+                      <LotRowActions
+                        lotId={lot.id}
+                        holdingId={holdingId}
+                        holdingName={holdingName}
+                        lotNumber={index + 1}
+                        isMarketAsset={isMarket}
+                        assetType={assetType}
+                        totalLotCount={lots.filter((l) => !l.isLiquidated).length}
+                        currentValues={{
+                          shares: lot.shares,
+                          costBasisCents: lot.costBasisCents,
+                          costPerShareCents: lot.costPerShareCents,
+                          acquiredAt: lot.acquiredAt
+                            ? new Date(lot.acquiredAt).toISOString()
+                            : null,
+                          currentValueCents: lot.currentValueCents,
+                          mortgageMonthlyCents: lot.mortgageMonthlyCents,
+                          escrowMonthlyCents: lot.escrowMonthlyCents,
+                          interestRateBps: lot.interestRateBps,
+                          notes: lot.notes,
+                        }}
+                      />
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -358,6 +391,19 @@ export default async function HoldingDetailPage({ params }: HoldingDetailPagePro
 
   const { holding, account, kpis, lots, isMarket } = data;
 
+  // Fetch price info for manual override support
+  const priceInfo = holding.ticker && isMarket
+    ? await getCachedPrice(holding.ticker)
+    : null;
+
+  const priceInfoForDialog = priceInfo
+    ? {
+        priceCents: priceInfo.priceCents,
+        priceDollars: priceInfo.priceDollars,
+        isManualOverride: priceInfo.isManualOverride,
+      }
+    : null;
+
   const lotDates = lots.map((l) =>
     l.acquiredAt ? new Date(l.acquiredAt).toISOString() : null,
   );
@@ -389,6 +435,11 @@ export default async function HoldingDetailPage({ params }: HoldingDetailPagePro
             <Badge variant="secondary">
               {ASSET_TYPES[holding.assetType as AssetType] ?? holding.assetType}
             </Badge>
+            {priceInfoForDialog?.isManualOverride && (
+              <Badge variant="outline" className="border-amber-500/30 text-amber-600 dark:text-amber-400">
+                Manual Price
+              </Badge>
+            )}
             {holding.isLiquidated && (
               <Badge variant="destructive">Liquidated</Badge>
             )}
@@ -423,11 +474,12 @@ export default async function HoldingDetailPage({ params }: HoldingDetailPagePro
             holdingId={holding.id}
             currentValues={{
               name: holding.name,
+              assetType: holding.assetType,
               ticker: holding.ticker,
               sector: holding.sector,
               notes: holding.notes,
             }}
-            isMarketAsset={isMarket}
+            priceInfo={priceInfoForDialog}
           />
           {!holding.isLiquidated && (
             <LiquidatePositionDialog
@@ -527,6 +579,8 @@ export default async function HoldingDetailPage({ params }: HoldingDetailPagePro
           lots={lots}
           isMarket={isMarket}
           assetType={holding.assetType}
+          holdingId={holding.id}
+          holdingName={holding.name}
         />
       </div>
 

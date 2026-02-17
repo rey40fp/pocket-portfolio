@@ -2,15 +2,18 @@ import Link from "next/link";
 import { Package, Receipt, FileSpreadsheet, Download } from "lucide-react";
 import { getAllHoldingsWithDetails } from "@/server/dal/holdings";
 import { getAccountsWithSummary } from "@/server/dal/accounts";
+import { getLatestPriceUpdate } from "@/server/dal/prices";
 import { formatCurrency } from "@/lib/utils";
 import { HoldingsDataTable } from "@/components/dashboard/holdings-data-table";
 import { AddHoldingDialog } from "@/components/forms/add-holding-dialog";
 import { CsvImportDialog } from "@/components/forms/csv-import-dialog";
+import { PriceRefreshIndicator } from "@/components/shared/price-refresh-indicator";
 
 export default async function HoldingsPage() {
-  const [holdings, accountSummaries] = await Promise.all([
+  const [holdings, accountSummaries, latestPriceUpdate] = await Promise.all([
     getAllHoldingsWithDetails(),
     getAccountsWithSummary(),
+    getLatestPriceUpdate(),
   ]);
 
   const accountOptions = accountSummaries.map((a) => ({
@@ -124,7 +127,7 @@ export default async function HoldingsPage() {
   return (
     <div className="mx-auto max-w-7xl">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Holdings
@@ -145,6 +148,10 @@ export default async function HoldingsPage() {
               {formatCurrency(totalGainLossCents, { showSign: true })} gain/loss
             </span>
           </p>
+          <PriceRefreshIndicator
+            lastUpdated={latestPriceUpdate?.toISOString() ?? null}
+            className="mt-1"
+          />
         </div>
 
         <div className="flex items-center gap-2">

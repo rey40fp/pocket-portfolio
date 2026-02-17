@@ -230,9 +230,11 @@ export function AddHoldingDialog({ accountId, accounts, trigger }: AddHoldingDia
 
         if (isMarketAsset(data.assetType)) {
           shares = data.shares || null;
-          costPerShareCents = dollarsToCents(data.costPerShare || "0");
+          const cpsValue = parseFloat(data.costPerShare || "0");
+          costPerShareCents = cpsValue > 0 ? Math.round(cpsValue * 100) : null;
           const sharesNum = parseFloat(data.shares || "0");
-          costBasisCents = Math.round(sharesNum * costPerShareCents);
+          // Compute in dollars first for sub-cent precision, then convert to cents
+          costBasisCents = Math.round(sharesNum * cpsValue * 100);
           acquiredAt = data.acquiredAt
             ? new Date(data.acquiredAt).toISOString()
             : null;
@@ -249,6 +251,7 @@ export function AddHoldingDialog({ accountId, accounts, trigger }: AddHoldingDia
             ? new Date(data.acquiredAt).toISOString()
             : null;
         } else if (data.assetType === "cash") {
+          shares = "1";
           costBasisCents = dollarsToCents(data.balance || "0");
           currentValueCents = dollarsToCents(data.balance || "0");
           interestRateBps = data.apy ? percentToBps(data.apy) : null;
@@ -380,6 +383,12 @@ export function AddHoldingDialog({ accountId, accounts, trigger }: AddHoldingDia
             {errors.assetType && (
               <p className="text-xs text-destructive">
                 {errors.assetType.message}
+              </p>
+            )}
+            {selectedAssetType === "cash" && (
+              <p className="text-xs text-muted-foreground">
+                Use Cash for money market funds (SPAXX, VMFXX), savings, or
+                checking accounts.
               </p>
             )}
           </div>
@@ -578,9 +587,13 @@ export function AddHoldingDialog({ accountId, accounts, trigger }: AddHoldingDia
           {/* ── Cash Fields ──────────────────────────────────────── */}
           {isCash && (
             <>
+              <p className="text-xs text-muted-foreground">
+                Cash holdings track total balance only — no ticker or market
+                price needed. Update the balance anytime it changes.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="balance">Balance ($)</Label>
+                  <Label htmlFor="balance">Total Balance ($)</Label>
                   <Input
                     id="balance"
                     type="text"
